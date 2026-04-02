@@ -1,0 +1,515 @@
+import { ScrollView, TextEdit } from "std-widgets.slint";
+import { ClassesPage, ClassNotesPage, ClassNoteItem, ClassTileData, TileRow, NoteData } from "classes-page.slint";
+import { Page } from "types.slint";
+import { SettingsPage } from "settings-page.slint";
+
+// ─── Reusable tooltip bubble ──────────────────────────────────────────────────
+component Tooltip inherits Rectangle {
+    in property <string> label: "";
+
+    width: tip-text.preferred-width + 18px;
+    height: 28px;
+    background: #222238;
+    border-radius: 6px;
+    border-color: #383860;
+    border-width: 1px;
+    drop-shadow-color: #00000099;
+    drop-shadow-blur: 10px;
+    drop-shadow-offset-y: 2px;
+
+    tip-text := Text {
+        x: 9px;
+        y: 0;
+        height: parent.height;
+        text: root.label;
+        font-size: 12px;
+        color: #e4e4f4;
+        vertical-alignment: center;
+    }
+}
+
+// ─── Sidebar icon button ──────────────────────────────────────────────────────
+component SidebarIcon inherits Rectangle {
+    in property <string>  icon: "?";
+    in property <string>  label: "";
+    in property <bool>    sidebar-expanded: true;
+
+    // Exposed so AppWindow can read hover state and y-position
+    out property <bool>   is-hovered: touch.has-hover;
+    in property  <bool>   active: false;
+
+    callback clicked();
+
+    height: 46px;
+    border-radius: 8px;
+    background: active ? #1e1e3a : (touch.has-hover ? #252540 : transparent);
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        // When expanded — left-aligned with padding; when collapsed — centred
+        padding-left:  root.sidebar-expanded ? 13px : 0px;
+        padding-right: root.sidebar-expanded ? 13px : 0px;
+        spacing:       root.sidebar-expanded ? 10px : 0px;
+        alignment:     root.sidebar-expanded ? start : center;
+
+        Text {
+            width: 22px;
+            text: root.icon;
+            font-size: 17px;
+            color: #c4c4d8;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+
+        if root.sidebar-expanded: Text {
+            text: root.label;
+            font-size: 13px;
+            color: #9898b4;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// ─── Single note item ─────────────────────────────────────────────────────────
+export component NoteItem inherits Rectangle {
+    in property <string> note-text: "";
+    callback delete-note();
+
+    height: 46px;
+    border-radius: 8px;
+    background: row-touch.has-hover ? #1c1c30 : #161625;
+
+    row-touch := TouchArea { mouse-cursor: default; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 8px;
+        spacing: 8px;
+
+        Text {
+            text: root.note-text;
+            font-size: 14px;
+            color: #ccccdf;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        Rectangle {
+            width: 30px;
+            height: 30px;
+            border-radius: 15px;
+            background: del-touch.has-hover ? #b03030 : transparent;
+
+            del-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.delete-note(); }
+            }
+
+            Text {
+                text: "✖️";
+                font-size: 13px;
+                color: del-touch.has-hover ? #ffffff : #55556a;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ─── App window ───────────────────────────────────────────────────────────────
+export component AppWindow inherits Window {
+    title: "Notes AI";
+    default-font-family: "Segoe UI";
+    default-font-size: 15px;
+    icon: @image-url("./icon-removebg-preview.png");
+    background: #0d0d1a;
+    preferred-width: 860px;
+    preferred-height: 640px;
+    min-width: 860px;
+    min-height: 640px;
+
+    property <bool>   sidebar-open: true;
+    property <length> sidebar-w: sidebar-open ? 200px : 52px;
+
+    // Navigation
+    in-out property <Page>   current-page: Page.Main;
+    in-out property <string> selected-class: "";
+
+    // Row model proxy — Rust calls ui.set_rows(...) on AppWindow
+    in-out property <[TileRow]> rows;
+
+    // Notes for the currently open class — Rust swaps this when class changes
+    in-out property <[NoteData]> class-notes;
+    callback delete-class-note(int);
+    callback add-class-note(string, string);
+    // Fired when user clicks a class tile — lets Rust load notes for that class
+    callback class-opened(string);
+    // Fired when user wants to delete entire category
+    callback delete-class-wrapper(string);
+
+    in-out property <string> alert-message: "";
+    in-out property <bool>   alert-visible: false;
+    // Fired when user enter main note to be processed
+    callback add-main-note(string);
+    callback delete-main-note(int);
+    in-out property <[NoteData]> main-notes;
+    // Fired when user search by embeddings
+    callback on-semantic-search-wrapper(string);
+    // Fired when user renames a category (old name, new name)
+    callback rename-class-wrapper(string, string);
+    in-out property <[NoteData]> search-results;
+
+    // Settings
+    in-out property <string> llm-model;
+    in-out property <string> embeddings-model;
+    in-out property <int>    search-limit;
+    callback save-settings();
+
+    // X position for all tooltips (right edge of sidebar + toggle + gap)
+    property <length> tip-x: root.sidebar-w + 16px + 10px;
+    // Half-offset to vertically centre tooltip inside a 46px icon row
+    property <length> tip-oy: (46px - 28px) / 2;
+
+    // ── Main layout ───────────────────────────────────────────────────────────
+    HorizontalLayout {
+        spacing: 0;
+
+        // ── Sidebar ──────────────────────────────────────────────────────────
+        Rectangle {
+            width: root.sidebar-w;
+            background: #12122a;
+            animate width { duration: 220ms; easing: ease-in-out; }
+
+            VerticalLayout {
+                padding-top: 10px;
+                padding-bottom: 10px;
+                // Horizontal padding shrinks when collapsed so icon fills full width
+                padding-left:  root.sidebar-open ? 10px : 3px;
+                padding-right: root.sidebar-open ? 10px : 3px;
+                spacing: 5px;
+
+                // Logo row
+                Rectangle {
+                    height: 44px;
+                    HorizontalLayout {
+                        padding-left: 13px;
+                        spacing: 10px;
+                        alignment: start;
+
+                        Image {
+                            width: 22px;
+                            source: @image-url("./icon-removebg-preview.png");
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                        if root.sidebar-open: Text {
+                            text: "Notes AI";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: #9090c8;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #222240; }
+
+                si-home  := SidebarIcon {
+                    icon: "📝"; label: "Add note";
+                    sidebar-expanded: root.sidebar-open;
+                    active: root.current-page == Page.Main;
+                    clicked => { root.current-page = Page.Main; }
+                }
+                si-notes := SidebarIcon {
+                    icon: "🗄️"; label: "Classes";
+                    sidebar-expanded: root.sidebar-open;
+                    active: root.current-page == Page.Classes || root.current-page == Page.ClassDetail;
+                    clicked => { root.current-page = Page.Classes; }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                Rectangle { height: 1px; background: #222240; }
+
+                si-settings := SidebarIcon {
+                    icon: "⚙"; label: "Settings";
+                    sidebar-expanded: root.sidebar-open;
+                    active: root.current-page == Page.Settings;
+                    clicked => { root.current-page = Page.Settings; }
+                }
+                si-help     := SidebarIcon { icon: "❓"; label: "Help";      sidebar-expanded: root.sidebar-open; }
+            }
+        }
+
+        // ── Collapse / expand toggle ──────────────────────────────────────────
+        Rectangle {
+            width: 16px;
+            background: #0d0d1a;
+
+            Rectangle {
+                x: 0;
+                y: (parent.height - 50px) / 2;
+                width: 16px;
+                height: 50px;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+                background: btn-touch.has-hover ? #252540 : #181830;
+
+                btn-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.sidebar-open = !root.sidebar-open; }
+                }
+
+                Text {
+                    text: root.sidebar-open ? "◀" : "▶";
+                    font-size: 9px;
+                    color: btn-touch.has-hover ? #c4c4d8 : #50507a;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ── Main content ──────────────────────────────────────────────────────
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding: 18px;
+            spacing: 12px;
+
+            // Page Main: main notes queue
+            if root.current-page == Page.Main: VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    height: 30px;
+
+                    Text {
+                        text: "Notes queue";
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: #dcdcee;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                scroll := ScrollView {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        spacing: 4px;
+                        padding: 2px;
+                        width: scroll.visible-width - 4px;
+                        
+                        for note[i] in root.main-notes: NoteItem {
+                            note-text: note.text;
+                            delete-note => { 
+                                root.delete-main-note(note.id);
+                                debug("DELETING MAIN NOTE WITH ID \{note.id}") 
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 90px;
+                    border-radius: 10px;
+                    background: #12122a;
+                    border-color: input-field.has-focus ? #6c63ff : #252545;
+                    border-width: 1.5px;
+                    
+                    input-field := TextEdit {
+                        x: 10px;
+                        y: 10px;
+                        width: parent.width - 20px;
+                        height: parent.height - 20px;
+                        font-size: 14px;
+                        wrap: word-wrap;
+                        placeholder-text: "Write a note and press Enter…";
+                        key-pressed(ev) => {
+                            if ev.text == "\n" && !ev.modifiers.shift {
+                                root.add-main-note(self.text);
+                                self.text = "";
+                                accept
+                            } else if ev.modifiers.control && (ev.text == "v" || ev.text == "м") {
+                                self.paste();
+                                accept
+                            } else if ev.modifiers.control && (ev.text == "a" || ev.text == "ф") {
+                                self.select-all();
+                                accept
+                            } else {
+                                reject
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Page Classes: classes grid
+            if root.current-page == Page.Classes: ClassesPage {
+                vertical-stretch: 1;
+                rows: root.rows;
+                class-selected(name) => {
+                    root.selected-class = name;
+                    root.current-page = Page.ClassDetail;
+                    root.class-opened(name);
+                }
+                on-semantic-search(text) => { root.on-semantic-search-wrapper(text); debug("SEMANTIC SEARCH TEXT \{text}") }
+            }
+
+            // Page SearchResults: semantic search results
+            if root.current-page == Page.SearchResults: VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    height: 36px;
+                    spacing: 12px;
+
+                    Rectangle {
+                        width: 90px;
+                        height: 32px;
+                        border-radius: 8px;
+                        background: back-search-ta.has-hover ? #252540 : #1a1a32;
+                        border-color: #2a2a44;
+                        border-width: 1px;
+
+                        back-search-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.current-page = Page.Classes; }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            spacing: 6px;
+                            alignment: start;
+                            Text { text: "←"; font-size: 14px; color: #9898b4; vertical-alignment: center; }
+                            Text { text: "Back"; font-size: 13px; color: #9898b4; vertical-alignment: center; }
+                        }
+                    }
+
+                    Text {
+                        text: "Search results";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: #dcdcee;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                sr-scroll := ScrollView {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        spacing: 4px;
+                        padding: 2px;
+                        width: sr-scroll.visible-width - 4px;
+
+                        for note in root.search-results: ClassNoteItem {
+                            note-text: note.text;
+                            date: note.date;
+                            delete-note => { }
+                        }
+                    }
+                }
+            }
+
+            // Page ClassDetail: notes inside a class
+            if root.current-page == Page.ClassDetail: ClassNotesPage {
+                vertical-stretch: 1;
+                class-name:  root.selected-class;
+                notes:       root.class-notes;
+                go-back      => { root.current-page = Page.Classes; }
+                delete-note(i) => { root.delete-class-note(i); debug("ROOT NOTE ID \{i}")}
+                add-note(text) => { root.add-class-note(text, root.selected-class); debug("CLASS NOTE FROM UI ADD \{text}") }
+                delete-class(class_name) => {
+                    root.delete_class_wrapper(class_name);
+                    root.current-page = Page.Classes;
+                    debug("DELETING CLASS \{class_name}")
+                }
+                rename-class(new_name) => {
+                    root.rename-class-wrapper(root.selected-class, new_name);
+                    root.selected-class = new_name;
+                }
+            }
+
+            // Page Settings
+            if root.current-page == Page.Settings: SettingsPage {
+                vertical-stretch: 1;
+                llm-model <=> root.llm-model;
+                embeddings-model <=> root.embeddings-model;
+                search-limit <=> root.search-limit;
+                save-settings => { root.save-settings(); }
+            }
+        }
+    }
+
+    // ── Tooltips — direct children of AppWindow so they render above everything ──
+    // Declared AFTER the layout, so painted on top (Slint draws in declaration order).
+    if !root.sidebar-open && si-home.is-hovered: Tooltip {
+        x: root.tip-x;
+        y: si-home.y + root.tip-oy;
+        label: si-home.label;
+    }
+    if !root.sidebar-open && si-notes.is-hovered: Tooltip {
+        x: root.tip-x;
+        y: si-notes.y + root.tip-oy;
+        label: si-notes.label;
+    }
+
+    // ── Alert banner ─────────────────────────────────────────────────────────────
+    if root.alert-visible: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - 24px;
+        width: alert-text.preferred-width + 48px;
+        height: 44px;
+        border-radius: 10px;
+        background: #3a1a1a;
+        border-color: #cc4444;
+        border-width: 1.5px;
+        drop-shadow-color: #00000099;
+        drop-shadow-blur: 16px;
+        drop-shadow-offset-y: 4px;
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 12px;
+            spacing: 10px;
+
+            alert-text := Text {
+                text: root.alert-message;
+                font-size: 13px;
+                color: #ff8888;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
+                background: close-touch.has-hover ? #cc4444 : transparent;
+                close-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.alert-visible = false; }
+                }
+                Text {
+                    text: "✖️";
+                    font-size: 12px;
+                    color: #ff8888;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
