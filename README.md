@@ -36,8 +36,9 @@ ollama pull nomic-embed-text-v2-moe
 ```
 
 > Both models can be changed in the app settings.
-
-## Run
+## Download build
+[Download notes_ai.exe](https://github.com/MbGen/notes_ai/releases/download/Build/notes_ai.exe)
+## Or build source code by yourself
 
 ```bash
 cargo run --release
