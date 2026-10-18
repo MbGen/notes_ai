@@ -44,7 +44,10 @@ Prebuilt Windows portable ZIP/EXE and Android APK are published in
 [GitHub Releases](https://github.com/MbGen/notes_ai/releases).
 Extract the Windows ZIP to a writable folder and open `NotesAI.exe`; it creates
 its database and settings beside the executable. Personal notes are not shipped.
-See [RELEASE.md](RELEASE.md) for packaging and runtime requirements.
+For a source build, run `cargo build --release --target x86_64-pc-windows-msvc`,
+then `scripts/package-windows.ps1`. The Windows SDK resource compiler (`rc.exe`)
+is required. The portable ZIP includes the Visual C++ runtime; the standalone
+EXE requires that runtime to be installed already. Ollama/models are separate.
 
 Install Rust and the platform's native build tools, then install
 [Ollama](https://ollama.com/) and pull the default models:
@@ -103,7 +106,8 @@ notes_ai.exe --export-backup <output.db-or-json-or-md>
 Android source lives in `android/`; Pixel 9a is the intended physical test device.
 Build without Android Studio with `scripts/build-android.ps1`; local tools and
 caches live on D. The APK is available at `dist/NotesAI-0.4-debug.apk`.
-See [SYNC.md](SYNC.md) for building, pairing, protocol and current limitations.
+Enable phone sync in PC Preferences, then scan the QR from Android Connect.
+Sync uses local HTTP with a shared pairing key. Keep it on a trusted local network.
 Android 0.4 uses the native Atelier UI: Capture, Library with recently opened collections and date sorting, and Connect with QR pairing.
 The desktop hosts a local server, not a cloud relay: both devices need a network
 path to the PC. Closed-app Android background sync is still pending.
@@ -126,5 +130,5 @@ image tool. Also check a 940 × 720 window, the supported minimum.
 
 Rust · Slint · Ollama · SQLite / sqlite-vec · Axum · reqwest / scraper.
 
-See [TODO.md](TODO.md) for the remaining roadmap, including Android background
-sync and the physical-device test checklist.
+Android background sync and physical-device validation of the latest action
+dialogs remain future work.

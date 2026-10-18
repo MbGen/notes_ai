@@ -9,3 +9,5 @@
 /dist/
 *.keystore
 *.jks
+*.md
+!/README.md
