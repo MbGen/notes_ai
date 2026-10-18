@@ -1,562 +1,161 @@
 import { ScrollView, TextEdit } from "std-widgets.slint";
+import { Atelier, ActionButton, Field, Eyebrow, PageHeading } from "atelier.slint";
 
-// Exported so Rust can construct values directly
-export struct ClassTileData { name: string, count: string, accent: color }
-
-// A row of up to 3 tiles.  `len` tells how many slots (t0..t2) are filled.
-// Rust packs tiles into rows: if the last row has len < 3, fill it;
-// otherwise push a new TileRow.
-export struct TileRow {
-    t0: ClassTileData,
-    t1: ClassTileData,
-    t2: ClassTileData,
-    len: int,
-}
-
-// A single note entry shown inside ClassNotesPage
+export struct ClassTileData { name: string, count: string, accent: color, new-count: int }
+export struct TileRow { t0: ClassTileData, t1: ClassTileData, t2: ClassTileData, len: int }
 export struct NoteData { id: int, text: string, date: string }
+export struct WebResultData { title: string, url: string, domain: string, snippet: string, saved: bool }
 
-// ─── Class tile ───────────────────────────────────────────────────────────────
 component ClassTile inherits Rectangle {
-    in property <string> class-name: "";
-    in property <string> note-count: "0 notes";
-    in property <color>  accent: #2d2459;
+    in property <ClassTileData> data;
     callback clicked();
-
     horizontal-stretch: 1;
-    height: 130px;
+    height: 162px;
     border-radius: 14px;
-    background: tile-ta.has-hover ? root.accent.brighter(0.12) : root.accent;
-
-    tile-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-
+    background: tile-touch.has-hover ? Atelier.raised : Atelier.surface;
+    border-width: 1px;
+    border-color: tile-touch.has-hover ? #6b624d : Atelier.border;
+    animate background { duration: 180ms; }
+    tile-touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
     VerticalLayout {
-        padding: 20px;
-        spacing: 6px;
-        alignment: center;
-
-        Text {
-            text: root.class-name;
-            font-size: 26px;
-            font-weight: 700;
-            color: #ffffff;
-            horizontal-alignment: center;
-            overflow: elide;
+        padding: 22px; spacing: 12px;
+        HorizontalLayout {
+            height: 28px;
+            Text { text: "↗"; color: Atelier.gold; font-size: 22px; }
+            Rectangle { horizontal-stretch: 1; }
+            if root.data.new-count > 0: Rectangle {
+                width: max(26px, badge-text.preferred-width + 14px); height: 26px;
+                border-radius: 13px; background: Atelier.gold;
+                badge-text := Text { text: root.data.new-count > 99 ? "99+" : "\{root.data.new-count}"; color: #24271f; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
         }
-        Text {
-            text: root.note-count;
-            font-size: 11px;
-            color: #ffffff70;
-            horizontal-alignment: center;
+        Rectangle { vertical-stretch: 1; }
+        Text { text: root.data.name; color: Atelier.ink; font-family: "Georgia"; font-size: 21px; overflow: elide; }
+        HorizontalLayout {
+            Text { text: root.data.count; color: Atelier.muted; font-size: 11px; }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: root.data.new-count > 0 ? "NEW ARRIVALS" : "COLLECTION"; color: root.data.new-count > 0 ? Atelier.gold : Atelier.dim; font-size: 8px; letter-spacing: 1px; }
         }
     }
 }
 
-// ─── Note item inside a class ─────────────────────────────────────────────────
 export component ClassNoteItem inherits Rectangle {
-    in property <string> note-text: "NotePreview";
-    in property <string> date: "00.00.1999";
+    in property <string> note-text;
+    in property <string> date;
     in property <int> index: -1;
-
+    in property <bool> can-delete: true;
     callback delete-note();
-
-    height: 58px;
-    border-radius: 8px;
-    background: row-ta.has-hover ? #1c1c30 : #161625;
-
+    property <bool> expanded: false;
     property <bool> copied: false;
-
-    // Hidden TextInput used only to copy text to clipboard
-    copy-input := TextInput {
-        width: 0; height: 0;
-        text: root.note-text;
-        enabled: false;
-    }
-
-    row-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => {
-            copy-input.select-all();
-            copy-input.copy();
-            root.copied = true;
-            copy-timer.running = true;
+    height: root.expanded ? max(124px, body.preferred-height + 88px) : 124px;
+    border-radius: 12px;
+    background: Atelier.surface;
+    border-width: 1px; border-color: Atelier.border;
+    copy-input := TextInput { width: 0; height: 0; text: root.note-text; read-only: true; }
+    copy-timer := Timer { interval: 1600ms; triggered => { root.copied = false; self.running = false; } }
+    VerticalLayout {
+        padding: 18px; spacing: 10px;
+        HorizontalLayout {
+            height: 18px;
+            Text { text: root.date; color: Atelier.gold; font-size: 10px; overflow: elide; horizontal-stretch: 1; }
+            Text { text: "NOTE"; color: Atelier.dim; font-size: 9px; letter-spacing: 1px; }
         }
-    }
-
-    copy-timer := Timer {
-        interval: 1500ms;
-        running: false;
-        triggered => {
-            root.copied = false;
-            self.running = false;
-        }
-    }
-
-    HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 8px;
-        spacing: 8px;
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 3px;
-            alignment: center;
-
-            Text {
-                text: root.copied ? "Copied!" : root.note-text;
-                font-size: 14px;
-                color: root.copied ? #ff6b6b : #ccccdf;
-                overflow: elide;
-            }
-            Text {
-                text: root.date;
-                font-size: 11px;
-                color: #44445a;
-            }
-        }
-
-        Rectangle {
-            width: 30px;
-            height: 30px;
-            border-radius: 15px;
-            background: del-ta.has-hover ? #b03030 : transparent;
-
-            del-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.delete-note(); }
-            }
-
-            Text {
-                text: "✖️";
-                font-size: 13px;
-                color: del-ta.has-hover ? #ffffff : #55556a;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
+        body := Text { text: root.note-text; color: Atelier.ink; font-size: 14px; wrap: word-wrap; overflow: elide; vertical-stretch: 1; }
+        HorizontalLayout {
+            height: 20px; spacing: 18px;
+            Rectangle { width: 68px; Text { text: root.expanded ? "Collapse ↑" : "Read more ↗"; color: Atelier.muted; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.expanded = !root.expanded; } } }
+            Rectangle { width: 44px; Text { text: root.copied ? "Copied" : "Copy"; color: root.copied ? Atelier.green : Atelier.muted; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { copy-input.select-all(); copy-input.copy(); root.copied = true; copy-timer.running = true; } } }
+            Rectangle { horizontal-stretch: 1; }
+            if root.can-delete: Rectangle { width: 40px; Text { text: "Delete"; color: Atelier.dim; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.delete-note(); } } }
         }
     }
 }
 
-// ─── Classes grid page ────────────────────────────────────────────────────────
 export component ClassesPage inherits Rectangle {
     background: transparent;
+    in-out property <[TileRow]> rows;
+    in property <int> new-total;
     callback class-selected(string);
     callback on-semantic-search(string);
-    property <bool> search-open: false;
-
-    // Rows model — managed entirely from Rust via VecModel<TileRow>.
-    // Each row holds up to 3 tiles; `len` says how many are filled.
-    in-out property <[TileRow]> rows;
-
-    // ── Main layout ───────────────────────────────────────────────────────────
     VerticalLayout {
-        spacing: 14px;
-
-        // Header
+        spacing: 22px;
+        Eyebrow { text: "YOUR PERSONAL ARCHIVE"; }
         HorizontalLayout {
-            height: 36px;
-            spacing: 10px;
-
-            Text {
-                text: "Classes";
-                font-size: 20px;
-                font-weight: 700;
-                color: #dcdcee;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-
-            Rectangle {
-                width: 36px;
-                height: 36px;
-                border-radius: 8px;
-                background: search-ta.has-hover || root.search-open ? #252540 : transparent;
-
-                search-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.search-open = true; }
-                }
-
-                Text {
-                    text: "🔍";
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+            PageHeading { text: "Everything in its place."; horizontal-stretch: 1; }
+            Text { text: root.new-total > 0 ? "\{root.new-total} new notes" : "All caught up"; color: root.new-total > 0 ? Atelier.gold : Atelier.muted; font-size: 12px; vertical-alignment: center; }
+        }
+        Text { text: "Thoughtfully organised by AI. Open a collection to explore what is new."; color: Atelier.muted; font-size: 13px; }
+        if root.rows.length == 0: Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout { alignment: center; spacing: 14px;
+                Text { text: "Your library starts with a thought."; font-family: "Georgia"; font-size: 26px; color: Atelier.ink; horizontal-alignment: center; }
+                Text { text: "Capture your first note. AI will create its collection here."; color: Atelier.muted; font-size: 13px; horizontal-alignment: center; }
             }
         }
-
-        // ── Tile grid — one HorizontalLayout per TileRow, generated by Rust ────
-        grid-scroll := ScrollView {
+        if root.rows.length > 0: grid-scroll := ScrollView {
             vertical-stretch: 1;
-
-            VerticalLayout {
-                spacing: 12px;
-                width: grid-scroll.visible-width;
-
-                for row in root.rows: HorizontalLayout {
-                    spacing: 12px;
-
-                    // Filled slots
-                    if row.len >= 1: ClassTile {
-                        class-name: row.t0.name;
-                        note-count: row.t0.count;
-                        accent:     row.t0.accent;
-                        clicked => { root.class-selected(row.t0.name); }
-                    }
-                    if row.len >= 2: ClassTile {
-                        class-name: row.t1.name;
-                        note-count: row.t1.count;
-                        accent:     row.t1.accent;
-                        clicked => { root.class-selected(row.t1.name); }
-                    }
-                    if row.len >= 3: ClassTile {
-                        class-name: row.t2.name;
-                        note-count: row.t2.count;
-                        accent:     row.t2.accent;
-                        clicked => { root.class-selected(row.t2.name); }
-                    }
-
-                    // Invisible spacers keep tile widths uniform in the last row
+            VerticalLayout { width: grid-scroll.visible-width; spacing: 14px;
+                for row in root.rows: HorizontalLayout { spacing: 14px;
+                    if row.len >= 1: ClassTile { data: row.t0; clicked => { root.class-selected(row.t0.name); } }
+                    if row.len >= 2: ClassTile { data: row.t1; clicked => { root.class-selected(row.t1.name); } }
+                    if row.len >= 3: ClassTile { data: row.t2; clicked => { root.class-selected(row.t2.name); } }
                     if row.len < 3: Rectangle { horizontal-stretch: 1; }
                     if row.len < 2: Rectangle { horizontal-stretch: 1; }
                 }
             }
         }
     }
-
-    // ── Hover tooltip (only when search is closed) ────────────────────────────
-    if search-ta.has-hover && !root.search-open: Rectangle {
-        x: root.width - (stip.preferred-width + 18px);
-        y: 42px;
-        width: stip.preferred-width + 18px;
-        height: 28px;
-        background: #222238;
-        border-radius: 6px;
-        border-color: #383860;
-        border-width: 1px;
-        drop-shadow-color: #00000099;
-        drop-shadow-blur: 8px;
-        drop-shadow-offset-y: 2px;
-
-        stip := Text {
-            x: 9px; y: 0;
-            height: parent.height;
-            text: "Search across all categories";
-            font-size: 12px;
-            color: #e4e4f4;
-            vertical-alignment: center;
-        }
-    }
-
-    // ── Search overlay (declared last → always on top) ────────────────────────
-    if root.search-open: Rectangle {
-        x: 0; y: 0;
-        width: root.width;
-        height: root.height;
-        // Dark semi-transparent backdrop
-        background: #07071888;
-
-        // Clicking backdrop closes the overlay
-        TouchArea {
-            clicked => { root.search-open = false; }
-        }
-
-        // Glass card — centred horizontally, ~22% from top
-        card := Rectangle {
-            property <length> card-w: min(540px, root.width - 80px);
-            x: (root.width  - self.card-w) / 2;
-            y: root.height  * 0.22;
-            width:  card-w;
-            height: 62px;
-            border-radius: 16px;
-
-            // Glass look: semi-transparent dark + subtle bright border
-            background: #1a1a3acc;
-            border-color: #9090ff22;
-            border-width: 1.5px;
-            drop-shadow-color: #000000bb;
-            drop-shadow-blur:  40px;
-            drop-shadow-offset-y: 14px;
-
-            // Absorb pointer events so backdrop doesn't close on card click
-            TouchArea { }
-
-            HorizontalLayout {
-                padding-left: 18px;
-                padding-right: 14px;
-                spacing: 12px;
-
-                // Search icon
-                Text {
-                    text: "🔍";
-                    font-size: 17px;
-                    width: 22px;
-                    vertical-alignment: center;
-                    color: #9090c8;
-                }
-
-                // Text input + manual placeholder overlay
-                Rectangle {
-                    horizontal-stretch: 1;
-
-                    search-input := TextInput {
-                        width: parent.width;
-                        font-size: 16px;
-                        color: #e8e8f8;
-                        selection-background-color: #5a52e066;
-                        selection-foreground-color: #ffffff;
-                        vertical-alignment: center;
-
-                        key-pressed(ev) => {
-                            if ev.text == Key.Return {
-                                root.search-open = false;
-                                root.on-semantic-search(search-input.text);
-                                accept
-                            }
-                            reject
-                        }
-                    }
-
-                    // Placeholder — visible only while input is empty
-                    if search-input.text == "": Text {
-                        x: 0; y: 0;
-                        width: parent.width;
-                        height: parent.height;
-                        text: "Semantic search";
-                        font-size: 16px;
-                        color: #50507a;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // Close ×
-                Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 14px;
-                    background: x-ta.has-hover ? #ffffff18 : transparent;
-
-                    x-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.search-open = false; }
-                    }
-
-                    Text {
-                        text: "✖️";
-                        font-size: 13px;
-                        color: x-ta.has-hover ? #c0c0d8 : #606080;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-        }
-    }
 }
 
-// ─── Class notes detail page ──────────────────────────────────────────────────
 export component ClassNotesPage inherits Rectangle {
-    in property <string>     class-name: "";
+    in property <bool> newest-first: true;
+    callback sort-notes();
+    in property <string> class-name;
     in-out property <[NoteData]> notes;
-    background: transparent;
     callback go-back();
-    // Fired with the note index when user clicks ✕
     callback delete-note(int);
-    // Fired when user submits a new note from the input
     callback add-note(string);
-    // Fired when user press delete class button
     callback delete-class(string);
-    // Fired when user renames the category (new name)
     callback rename-class(string);
-
+    in-out property <string> draft;
     property <bool> editing-name: false;
-
+    property <bool> confirm-delete: false;
     VerticalLayout {
-        spacing: 12px;
-
-        // ── Header ──────────────────────────────────────────────────────────
-        HorizontalLayout {
-            height: 36px;
-            spacing: 12px;
-
-            // Back button
-            Rectangle {
-                width: 90px;
-                height: 32px;
-                border-radius: 8px;
-                background: back-ta.has-hover ? #252540 : #1a1a32;
-                border-color: #2a2a44;
-                border-width: 1px;
-
-                back-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.go-back(); }
-                }
-
-                HorizontalLayout {
-                    padding-left: 10px;
-                    spacing: 6px;
-                    alignment: start;
-
-                    Text { text: "←"; font-size: 14px; color: #9898b4; vertical-alignment: center; }
-                    Text { text: "Back"; font-size: 13px; color: #9898b4; vertical-alignment: center; }
-                }
-            }
-
-            // Class name — display or edit mode
-            if !root.editing-name: HorizontalLayout {
-                horizontal-stretch: 1;
-                spacing: 6px;
-                alignment: start;
-
-                Text {
-                    text: root.class-name;
-                    font-size: 20px;
-                    font-weight: 700;
-                    color: #dcdcee;
-                    vertical-alignment: center;
-                }
-
-                Rectangle {
-                    width: 26px;
-                    height: 26px;
-                    border-radius: 6px;
-                    background: pen-ta.has-hover ? #252540 : transparent;
-
-                    pen-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.editing-name = true; }
-                    }
-
-                    Text {
-                        text: "✏️";
-                        font-size: 14px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-
-            if root.editing-name: Rectangle {
-                horizontal-stretch: 1;
-                height: 36px;
-                border-radius: 8px;
-                background: #1a1a32;
-                border-color: #6c63ff;
-                border-width: 1.5px;
-
-                name-input := TextInput {
-                    x: 10px;
-                    width: parent.width - 20px;
-                    height: parent.height;
-                    text: root.class-name;
-                    font-size: 18px;
-                    font-weight: 700;
-                    color: #dcdcee;
-                    vertical-alignment: center;
-
-                    key-pressed(ev) => {
-                        if ev.text == Key.Return {
-                            root.rename-class(self.text);
-                            root.editing-name = false;
-                            accept
-                        } else if ev.text == Key.Escape {
-                            root.editing-name = false;
-                            accept
-                        }
-                        reject
-                    }
-                }
-            }
-
-            // Delete class button
-            Rectangle {
-                width: 128px;
-                height: 36px;
-                border-radius: 8px;
-                background: add-ta.has-hover ? #b3211b : #3d36b0;
-
-                add-ta := TouchArea { 
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.delete-class(root.class-name);
-                    }
-                }
-
-                Text {
-                    text: "Delete category🗑️";
-                    font-size: 13px;
-                    color: #a8a6a4;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                
-            }
+        spacing: 18px;
+        HorizontalLayout { height: 26px;
+            Rectangle { width: 130px; Text { text: "←  Back to library"; color: Atelier.muted; font-size: 12px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.go-back(); } } }
+            Rectangle { horizontal-stretch: 1; }
+            Eyebrow { text: "COLLECTION"; vertical-alignment: center; }
         }
-
-        // Subtitle
-        Text {
-            text: "Sorted by date  ·  " + root.class-name;
-            font-size: 11px;
-            color: #44445a;
-            height: 16px;
+        HorizontalLayout { spacing: 12px;
+            if !root.editing-name: PageHeading { text: root.class-name; overflow: elide; horizontal-stretch: 1; }
+            if root.editing-name: Field { text: root.class-name; horizontal-stretch: 1; accepted => { if self.text != "" { root.rename-class(self.text); root.editing-name = false; } } }
+            ActionButton { label: root.editing-name ? "Cancel" : "Rename"; clicked => { root.editing-name = !root.editing-name; } }
+            ActionButton { label: "Delete collection"; danger: true; clicked => { root.confirm-delete = true; } }
         }
-
-        // ── Notes list ───────────────────────────────────────────────────────
-        cn-scroll := ScrollView {
+        HorizontalLayout { spacing: 12px;
+            Text { text: "\{root.notes.length} notes  ·  Saved on this PC"; color: Atelier.muted; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+            ActionButton { label: root.newest-first ? "Date ↓  Newest first" : "Date ↑  Oldest first"; clicked => { root.sort-notes(); } }
+        }
+        detail-scroll := ScrollView {
             vertical-stretch: 1;
-
-            VerticalLayout {
-                spacing: 4px;
-                padding: 2px;
-                width: cn-scroll.visible-width - 4px;
-
-                // Dynamic: Rust fills `notes` via VecModel<NoteData>
-                for note[i] in root.notes: ClassNoteItem {
-                    index: note.id;
-                    note-text: note.text;
-                    date:      note.date;
-                    delete-note => { root.delete-note(note.id); }
-                }
+            VerticalLayout { width: detail-scroll.visible-width; spacing: 10px;
+                for note in root.notes: ClassNoteItem { note-text: note.text; date: note.date; index: note.id; delete-note => { root.delete-note(note.id); } }
+                if root.notes.length == 0: Text { text: "A little room for your next idea."; color: Atelier.muted; font-size: 15px; }
             }
         }
-
-        // ── Add note input ───────────────────────────────────────────────────
-        Rectangle {
-            height: 80px;
-            border-radius: 10px;
-            background: #12122a;
-            border-color: cn-input.has-focus ? #6c63ff : #252545;
-            border-width: 1.5px;
-
-            cn-input := TextEdit {
-                x: 10px;
-                y: 10px;
-                width: parent.width - 20px;
-                height: parent.height - 20px;
-                font-size: 14px;
-                wrap: word-wrap;
-                placeholder-text: "Add note to \"" + root.class-name + "\"…";
-
-                // Enter (without Shift) submits the note
-                key-pressed(ev) => {
-                    if ev.text == Key.Return && !ev.modifiers.shift {
-                        root.add-note(self.text);
-                        self.text = "";
-                        accept
-                    } else if ev.modifiers.control && ev.text == "v" {
-                        self.paste();
-                        accept
-                    } else if ev.modifiers.control && ev.text == "a" {
-                        self.select-all();
-                        accept
-                    }
-                    reject
-                }
+        HorizontalLayout { spacing: 12px;
+            entry := Field { text <=> root.draft; horizontal-stretch: 1; placeholder: "Add directly to this collection…"; accepted => { if self.text != "" { root.add-note(self.text); } } }
+            ActionButton { label: "Add note  +"; primary: true; clicked => { if entry.text != "" { root.add-note(entry.text); } } }
+        }
+    }
+    if root.confirm-delete: Rectangle {
+        background: #000000b0;
+        Rectangle { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; width: min(460px, parent.width - 20px); height: 220px; border-radius: 16px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+            VerticalLayout { padding: 26px; spacing: 18px;
+                Text { text: "Delete this collection?"; font-family: "Georgia"; font-size: 25px; color: Atelier.ink; }
+                Text { text: "All notes in this collection will be deleted from the PC and the next phone snapshot."; color: Atelier.muted; wrap: word-wrap; font-size: 13px; }
+                HorizontalLayout { spacing: 12px; ActionButton { label: "Keep collection"; clicked => { root.confirm-delete = false; } } ActionButton { label: "Delete collection"; danger: true; clicked => { root.confirm-delete = false; root.delete-class(root.class-name); } } }
             }
         }
     }

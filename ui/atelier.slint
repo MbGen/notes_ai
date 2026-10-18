@@ -1,0 +1,137 @@
+import { ScrollView } from "std-widgets.slint";
+
+export global Atelier {
+    out property <color> canvas: #101212;
+    out property <color> sidebar: #0c0e0e;
+    out property <color> surface: #181b1a;
+    out property <color> raised: #202422;
+    out property <color> border: #2c312d;
+    out property <color> gold: #d3bc8d;
+    out property <color> ink: #eeeae1;
+    out property <color> muted: #a5aaa1;
+    out property <color> dim: #737d74;
+    out property <color> green: #9ec4a6;
+    out property <color> red: #e6a59b;
+}
+
+export component ActionButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> available: true;
+    callback clicked();
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.available;
+    forward-focus: keyboard;
+    height: 40px;
+    min-width: button-text.preferred-width + 30px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: root.primary || keyboard.has-focus ? Atelier.gold : Atelier.border;
+    background: root.primary ? (touch.has-hover ? #e5cfa2 : Atelier.gold) : (touch.has-hover ? Atelier.raised : transparent);
+    opacity: root.available ? 1 : 0.45;
+    animate background { duration: 160ms; }
+    keyboard := FocusScope { enabled: root.available; key-pressed(event) => { if event.text == Key.Return || event.text == " " { root.clicked(); accept } else { reject } } }
+    touch := TouchArea { enabled: root.available; mouse-cursor: pointer; clicked => { keyboard.focus(); root.clicked(); } }
+    button-text := Text {
+        text: root.label;
+        color: root.primary ? #20241f : (root.danger ? Atelier.red : Atelier.ink);
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> secret: false;
+    in property <bool> read-only: false;
+    callback accepted();
+    height: 46px;
+    border-radius: 9px;
+    background: Atelier.canvas;
+    border-width: 1px;
+    border-color: input.has-focus ? Atelier.gold : Atelier.border;
+    clip: true;
+    input := TextInput {
+        x: 14px; y: 0; width: parent.width - 28px; height: parent.height;
+        text <=> root.text;
+        color: Atelier.ink;
+        font-size: 14px;
+        single-line: true;
+        read-only: root.read-only;
+        input-type: root.secret ? InputType.password : InputType.text;
+        selection-background-color: #d3bc8d55;
+        vertical-alignment: center;
+        accepted => { root.accepted(); }
+    }
+    if root.text == "": Text {
+        x: 14px; width: parent.width - 28px; height: parent.height;
+        text: root.placeholder; color: Atelier.dim; font-size: 13px; vertical-alignment: center;
+    }
+}
+
+export component Eyebrow inherits Text {
+    color: Atelier.gold;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+}
+
+export component PageHeading inherits Text {
+    color: Atelier.ink;
+    font-family: "Georgia";
+    font-size: 36px;
+    font-weight: 400;
+}
+
+export component StatusDot inherits Rectangle {
+    in property <bool> online: false;
+    width: 6px; min-height: 6px;
+    Rectangle { width: 6px; height: 6px; y: (parent.height - self.height) / 2; border-radius: 3px; background: root.online ? Atelier.green : Atelier.red; }
+}
+
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked;
+    callback toggled();
+    in property <string> label;
+    height: 32px;
+    HorizontalLayout { spacing: 12px;
+        Rectangle { width: 34px;
+            Rectangle { y: (parent.height - self.height) / 2; width: 34px; height: 20px; border-radius: 10px; background: root.checked ? Atelier.gold : Atelier.border;
+                Rectangle { x: root.checked ? 17px : 3px; y: 3px; width: 14px; height: 14px; border-radius: 7px; background: root.checked ? #25291e : Atelier.muted; animate x { duration: 140ms; } }
+            }
+        }
+        Text { text: root.label; font-size: 12px; color: Atelier.ink; horizontal-stretch: 1; vertical-alignment: center; }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.checked = !root.checked; root.toggled(); } }
+}
+
+export component NoteEditor inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    out property <bool> has-focus: input.has-focus;
+    callback capture();
+    editor-scroll := ScrollView {
+        width: parent.width; height: parent.height;
+        viewport-width: self.visible-width;
+        viewport-height: max(self.visible-height, input.preferred-height + 8px);
+        input := TextInput {
+            width: editor-scroll.visible-width; height: max(editor-scroll.visible-height, self.preferred-height);
+            text <=> root.text; color: Atelier.ink; font-size: 17px; single-line: false; wrap: word-wrap;
+            page-height: editor-scroll.visible-height;
+            selection-background-color: #d3bc8d55;
+            key-pressed(event) => {
+                if (event.text == "\n" || event.text == Key.Return) && event.modifiers.control { root.capture(); accept } else { reject }
+            }
+            cursor-position-changed(position) => {
+                if position.y + editor-scroll.viewport-y < 0px { editor-scroll.viewport-y = -position.y; }
+                else if position.y + editor-scroll.viewport-y > editor-scroll.visible-height - 24px { editor-scroll.viewport-y = editor-scroll.visible-height - position.y - 24px; }
+            }
+        }
+        if root.text == "": Text { width: editor-scroll.visible-width; text: root.placeholder; font-size: 17px; color: Atelier.dim; wrap: word-wrap; }
+    }
+}

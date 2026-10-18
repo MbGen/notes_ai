@@ -1,515 +1,287 @@
-import { ScrollView, TextEdit } from "std-widgets.slint";
-import { ClassesPage, ClassNotesPage, ClassNoteItem, ClassTileData, TileRow, NoteData } from "classes-page.slint";
-import { Page } from "types.slint";
+import { ScrollView, Palette } from "std-widgets.slint";
+import { Atelier, ActionButton, Field, Eyebrow, PageHeading, StatusDot, NoteEditor } from "atelier.slint";
+import { ClassesPage, ClassNotesPage, ClassNoteItem, ClassTileData, TileRow, NoteData, WebResultData } from "classes-page.slint";
 import { SettingsPage } from "settings-page.slint";
+import { Page } from "types.slint";
 
-// ─── Reusable tooltip bubble ──────────────────────────────────────────────────
-component Tooltip inherits Rectangle {
-    in property <string> label: "";
-
-    width: tip-text.preferred-width + 18px;
-    height: 28px;
-    background: #222238;
-    border-radius: 6px;
-    border-color: #383860;
-    border-width: 1px;
-    drop-shadow-color: #00000099;
-    drop-shadow-blur: 10px;
-    drop-shadow-offset-y: 2px;
-
-    tip-text := Text {
-        x: 9px;
-        y: 0;
-        height: parent.height;
-        text: root.label;
-        font-size: 12px;
-        color: #e4e4f4;
-        vertical-alignment: center;
-    }
-}
-
-// ─── Sidebar icon button ──────────────────────────────────────────────────────
-component SidebarIcon inherits Rectangle {
-    in property <string>  icon: "?";
-    in property <string>  label: "";
-    in property <bool>    sidebar-expanded: true;
-
-    // Exposed so AppWindow can read hover state and y-position
-    out property <bool>   is-hovered: touch.has-hover;
-    in property  <bool>   active: false;
-
+component NavigationItem inherits Rectangle {
+    in property <string> label;
+    in property <image> glyph;
+    in property <bool> active;
+    in property <int> badge;
     callback clicked();
-
-    height: 46px;
-    border-radius: 8px;
-    background: active ? #1e1e3a : (touch.has-hover ? #252540 : transparent);
-
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-
-    HorizontalLayout {
-        // When expanded — left-aligned with padding; when collapsed — centred
-        padding-left:  root.sidebar-expanded ? 13px : 0px;
-        padding-right: root.sidebar-expanded ? 13px : 0px;
-        spacing:       root.sidebar-expanded ? 10px : 0px;
-        alignment:     root.sidebar-expanded ? start : center;
-
-        Text {
-            width: 22px;
-            text: root.icon;
-            font-size: 17px;
-            color: #c4c4d8;
-            vertical-alignment: center;
-            horizontal-alignment: center;
-        }
-
-        if root.sidebar-expanded: Text {
-            text: root.label;
-            font-size: 13px;
-            color: #9898b4;
-            vertical-alignment: center;
-            overflow: elide;
-            horizontal-stretch: 1;
-        }
+    height: 48px; border-radius: 10px;
+    background: root.active ? #22261f : (nav-touch.has-hover ? #191c19 : transparent);
+    animate background { duration: 170ms; }
+    nav-touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    HorizontalLayout { padding-left: 16px; padding-right: 14px; spacing: 12px;
+        Rectangle { width: 18px; Image { source: root.glyph; width: 18px; height: 18px; y: (parent.height - self.height) / 2; colorize: root.active ? Atelier.gold : Atelier.dim; } }
+        Text { text: root.label; color: root.active ? Atelier.gold : Atelier.muted; font-size: 13px; font-weight: root.active ? 600 : 400; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.badge > 0: Rectangle { width: 24px; Rectangle { width: 24px; height: 24px; y: (parent.height - self.height) / 2; border-radius: 12px; background: Atelier.gold; Text { text: root.badge > 99 ? "99+" : "\{root.badge}"; color: #24271f; font-size: 10px; font-weight: 700; vertical-alignment: center; horizontal-alignment: center; } } }
     }
 }
 
-// ─── Single note item ─────────────────────────────────────────────────────────
-export component NoteItem inherits Rectangle {
-    in property <string> note-text: "";
-    callback delete-note();
-
-    height: 46px;
-    border-radius: 8px;
-    background: row-touch.has-hover ? #1c1c30 : #161625;
-
-    row-touch := TouchArea { mouse-cursor: default; }
-
-    HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 8px;
-        spacing: 8px;
-
-        Text {
-            text: root.note-text;
-            font-size: 14px;
-            color: #ccccdf;
-            vertical-alignment: center;
-            horizontal-stretch: 1;
-            overflow: elide;
-        }
-
-        Rectangle {
-            width: 30px;
-            height: 30px;
-            border-radius: 15px;
-            background: del-touch.has-hover ? #b03030 : transparent;
-
-            del-touch := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.delete-note(); }
-            }
-
-            Text {
-                text: "✖️";
-                font-size: 13px;
-                color: del-touch.has-hover ? #ffffff : #55556a;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-    }
-}
-
-// ─── App window ───────────────────────────────────────────────────────────────
 export component AppWindow inherits Window {
-    title: "Notes AI";
+    title: "Notes AI · Your private atelier";
     default-font-family: "Segoe UI";
-    default-font-size: 15px;
+    default-font-size: 14px;
     icon: @image-url("./icon-removebg-preview.png");
-    background: #0d0d1a;
-    preferred-width: 860px;
-    preferred-height: 640px;
-    min-width: 860px;
-    min-height: 640px;
+    background: Atelier.canvas;
+    preferred-width: 1180px; preferred-height: 820px;
+    min-width: 940px; min-height: 720px;
+    init => { Palette.color-scheme = ColorScheme.dark; }
 
-    property <bool>   sidebar-open: true;
-    property <length> sidebar-w: sidebar-open ? 200px : 52px;
-
-    // Navigation
-    in-out property <Page>   current-page: Page.Main;
-    in-out property <string> selected-class: "";
-
-    // Row model proxy — Rust calls ui.set_rows(...) on AppWindow
+    in-out property <Page> current-page: Page.Main;
+    in-out property <string> selected-class;
     in-out property <[TileRow]> rows;
-
-    // Notes for the currently open class — Rust swaps this when class changes
     in-out property <[NoteData]> class-notes;
+    in-out property <bool> notes-newest-first: true;
+    in-out property <bool> classification-web: true;
+    in-out property <string> ai-progress;
+    callback sort-notes();
+    in-out property <[NoteData]> main-notes;
+    in-out property <[NoteData]> search-results;
+    in-out property <[WebResultData]> web-results;
+    in-out property <int> new-total;
+    in-out property <int> note-total;
+    in-out property <int> category-total;
+    in-out property <bool> llm-running;
+    in-out property <string> llm-status: "Connecting to Ollama";
+    in-out property <string> last-saved-category;
+    in-out property <string> last-saved-text;
+    in-out property <int> last-saved-id;
+    in-out property <bool> notice-visible;
+    in-out property <bool> search-busy;
+    in-out property <string> search-message;
+    in-out property <string> query;
+    in-out property <bool> web-mode;
+    in-out property <string> draft;
+    in-out property <string> class-draft;
+
     callback delete-class-note(int);
     callback add-class-note(string, string);
-    // Fired when user clicks a class tile — lets Rust load notes for that class
     callback class-opened(string);
-    // Fired when user wants to delete entire category
     callback delete-class-wrapper(string);
-
-    in-out property <string> alert-message: "";
-    in-out property <bool>   alert-visible: false;
-    // Fired when user enter main note to be processed
     callback add-main-note(string);
     callback delete-main-note(int);
-    in-out property <[NoteData]> main-notes;
-    // Fired when user search by embeddings
-    callback on-semantic-search-wrapper(string);
-    // Fired when user renames a category (old name, new name)
     callback rename-class-wrapper(string, string);
-    in-out property <[NoteData]> search-results;
+    callback on-semantic-search-wrapper(string);
+    callback web-search(string);
+    callback cancel-search();
+    callback open-web-result(int);
+    callback save-web-result(int);
+    callback open-browser-search();
+    callback open-last-note();
 
-    // Settings
+    in-out property <string> alert-message;
+    in-out property <bool> alert-visible;
+    in-out property <bool> alert-success;
     in-out property <string> llm-model;
     in-out property <string> embeddings-model;
-    in-out property <int>    search-limit;
+    in-out property <int> search-limit;
+    in-out property <bool> sync-enabled;
+    in-out property <string> sync-port: "8743";
+    in-out property <bool> sync-running;
+    in-out property <string> sync-status;
+    in-out property <string> sync-devices;
+    in-out property <string> sync-token;
+    in-out property <image> sync-qr;
+    in-out property <string> sync-address;
+    callback reset-sync-pairing();
     callback save-settings();
+    callback import-requested();
+    callback import-confirmed();
+    callback import-cancelled();
+    callback export-data(string);
+    in-out property <string> import-preview;
+    in-out property <bool> import-confirmation;
+    in-out property <string> transfer-status;
 
-    // X position for all tooltips (right edge of sidebar + toggle + gap)
-    property <length> tip-x: root.sidebar-w + 16px + 10px;
-    // Half-offset to vertically centre tooltip inside a 46px icon row
-    property <length> tip-oy: (46px - 28px) / 2;
+    function search-now() {
+        if root.query != "" {
+            if root.web-mode { root.web-search(root.query); }
+            else { root.on-semantic-search-wrapper(root.query); }
+        }
+    }
 
-    // ── Main layout ───────────────────────────────────────────────────────────
-    HorizontalLayout {
-        spacing: 0;
-
-        // ── Sidebar ──────────────────────────────────────────────────────────
-        Rectangle {
-            width: root.sidebar-w;
-            background: #12122a;
-            animate width { duration: 220ms; easing: ease-in-out; }
-
-            VerticalLayout {
-                padding-top: 10px;
-                padding-bottom: 10px;
-                // Horizontal padding shrinks when collapsed so icon fills full width
-                padding-left:  root.sidebar-open ? 10px : 3px;
-                padding-right: root.sidebar-open ? 10px : 3px;
-                spacing: 5px;
-
-                // Logo row
-                Rectangle {
-                    height: 44px;
-                    HorizontalLayout {
-                        padding-left: 13px;
-                        spacing: 10px;
-                        alignment: start;
-
-                        Image {
-                            width: 22px;
-                            source: @image-url("./icon-removebg-preview.png");
-                            vertical-alignment: center;
-                            horizontal-alignment: center;
-                        }
-                        if root.sidebar-open: Text {
-                            text: "Notes AI";
-                            font-size: 14px;
-                            font-weight: 700;
-                            color: #9090c8;
-                            vertical-alignment: center;
-                        }
+    HorizontalLayout { spacing: 0;
+        Rectangle { width: 222px; background: Atelier.sidebar;
+            VerticalLayout { padding: 20px; padding-top: 36px; spacing: 8px;
+                HorizontalLayout { height: 48px; spacing: 12px;
+                    Rectangle { width: 38px; height: 42px; border-radius: 10px; border-width: 1px; border-color: #655a43;
+                        Text { text: "N"; font-family: "Georgia"; font-size: 28px; color: Atelier.gold; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    VerticalLayout { spacing: 2px; alignment: center;
+                        Text { text: "Notes AI"; font-family: "Georgia"; font-size: 22px; color: Atelier.ink; }
+                        Text { text: "THE PRIVATE ATELIER"; color: Atelier.dim; font-size: 7px; letter-spacing: 1.5px; }
                     }
                 }
-
-                Rectangle { height: 1px; background: #222240; }
-
-                si-home  := SidebarIcon {
-                    icon: "📝"; label: "Add note";
-                    sidebar-expanded: root.sidebar-open;
-                    active: root.current-page == Page.Main;
-                    clicked => { root.current-page = Page.Main; }
-                }
-                si-notes := SidebarIcon {
-                    icon: "🗄️"; label: "Classes";
-                    sidebar-expanded: root.sidebar-open;
-                    active: root.current-page == Page.Classes || root.current-page == Page.ClassDetail;
-                    clicked => { root.current-page = Page.Classes; }
-                }
-
+                Rectangle { height: 38px; }
+                Eyebrow { text: "WORKSPACE"; color: Atelier.dim; font-size: 8px; }
+                Rectangle { height: 8px; }
+                NavigationItem { label: "Capture"; glyph: @image-url("icons/capture.svg"); active: root.current-page == Page.Main; clicked => { root.current-page = Page.Main; } }
+                NavigationItem { label: "Library"; glyph: @image-url("icons/library.svg"); active: root.current-page == Page.Classes || root.current-page == Page.ClassDetail; badge: root.new-total; clicked => { root.current-page = Page.Classes; } }
+                NavigationItem { label: "Discover"; glyph: @image-url("icons/discover.svg"); active: root.current-page == Page.SearchResults; clicked => { root.current-page = Page.SearchResults; } }
                 Rectangle { vertical-stretch: 1; }
-
-                Rectangle { height: 1px; background: #222240; }
-
-                si-settings := SidebarIcon {
-                    icon: "⚙"; label: "Settings";
-                    sidebar-expanded: root.sidebar-open;
-                    active: root.current-page == Page.Settings;
-                    clicked => { root.current-page = Page.Settings; }
-                }
-                si-help     := SidebarIcon { icon: "❓"; label: "Help";      sidebar-expanded: root.sidebar-open; }
+                Rectangle { height: 1px; background: Atelier.border; }
+                NavigationItem { label: "Preferences"; glyph: @image-url("icons/settings.svg"); active: root.current-page == Page.Settings; clicked => { root.current-page = Page.Settings; } }
+                Rectangle { height: 14px; }
+                HorizontalLayout { height: 22px; spacing: 8px; StatusDot { online: root.llm-running; } Text { text: root.llm-status; color: Atelier.muted; font-size: 10px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; } }
+                HorizontalLayout { height: 22px; spacing: 8px; StatusDot { online: root.sync-running; } Text { text: root.sync-running ? "Phone sync available" : "Phone sync offline"; color: Atelier.dim; font-size: 10px; horizontal-stretch: 1; vertical-alignment: center; } }
+                Text { text: "YOURS. QUIETLY INTELLIGENT."; color: #505b52; font-size: 7px; letter-spacing: 1px; height: 30px; vertical-alignment: bottom; }
             }
         }
-
-        // ── Collapse / expand toggle ──────────────────────────────────────────
-        Rectangle {
-            width: 16px;
-            background: #0d0d1a;
-
-            Rectangle {
-                x: 0;
-                y: (parent.height - 50px) / 2;
-                width: 16px;
-                height: 50px;
-                border-top-right-radius: 6px;
-                border-bottom-right-radius: 6px;
-                background: btn-touch.has-hover ? #252540 : #181830;
-
-                btn-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.sidebar-open = !root.sidebar-open; }
-                }
-
-                Text {
-                    text: root.sidebar-open ? "◀" : "▶";
-                    font-size: 9px;
-                    color: btn-touch.has-hover ? #c4c4d8 : #50507a;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+        Rectangle { width: 1px; background: Atelier.border; }
+        VerticalLayout { padding-left: 36px; padding-right: 36px; padding-top: 27px; padding-bottom: 28px; spacing: 24px;
+            HorizontalLayout { height: 28px;
+                Eyebrow { text: root.current-page == Page.Settings ? "PREFERENCES" : (root.current-page == Page.SearchResults ? "DISCOVER" : "PERSONAL WORKSPACE"); color: Atelier.dim; font-size: 8px; horizontal-stretch: 1; vertical-alignment: center; }
+                Text { text: "\{root.note-total} notes   /   \{root.category-total} collections"; color: Atelier.dim; font-size: 10px; vertical-alignment: center; }
             }
-        }
+            Rectangle { height: 1px; background: Atelier.border; }
 
-        // ── Main content ──────────────────────────────────────────────────────
-        VerticalLayout {
-            horizontal-stretch: 1;
-            padding: 18px;
-            spacing: 12px;
-
-            // Page Main: main notes queue
-            if root.current-page == Page.Main: VerticalLayout {
-                vertical-stretch: 1;
-                spacing: 12px;
-
-                HorizontalLayout {
-                    spacing: 10px;
-                    height: 30px;
-
-                    Text {
-                        text: "Notes queue";
-                        font-size: 18px;
-                        font-weight: 700;
-                        color: #dcdcee;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
+            if root.current-page == Page.Main: VerticalLayout { spacing: 22px; vertical-stretch: 1;
+                VerticalLayout { spacing: 10px;
+                    Eyebrow { text: "ROOM FOR YOUR NEXT GREAT THOUGHT"; }
+                    PageHeading { text: "Clear your mind."; font-size: 46px; }
+                    Text { text: "Capture a thought. Let AI find its place."; color: Atelier.muted; font-size: 14px; }
                 }
-
-                scroll := ScrollView {
-                    vertical-stretch: 1;
-
-                    VerticalLayout {
-                        spacing: 4px;
-                        padding: 2px;
-                        width: scroll.visible-width - 4px;
-                        
-                        for note[i] in root.main-notes: NoteItem {
-                            note-text: note.text;
-                            delete-note => { 
-                                root.delete-main-note(note.id);
-                                debug("DELETING MAIN NOTE WITH ID \{note.id}") 
-                            }
+                Rectangle { height: 210px; border-radius: 16px; background: Atelier.surface; border-width: 1px; border-color: compose.has-focus ? #796c50 : Atelier.border;
+                    VerticalLayout { padding: 20px; spacing: 14px;
+                        HorizontalLayout { height: 16px; Eyebrow { text: "A NEW NOTE"; color: Atelier.dim; font-size: 8px; horizontal-stretch: 1; } Text { text: "PRIVATE BY DEFAULT"; color: Atelier.dim; font-size: 8px; letter-spacing: 1px; } }
+                        compose := NoteEditor { text <=> root.draft; placeholder: "An idea, a recommendation, something worth keeping…"; vertical-stretch: 1;
+                            capture => { if root.draft != "" { root.add-main-note(root.draft); } }
+                        }
+                        HorizontalLayout { height: 40px;
+                            Text { text: "Ctrl + Enter to capture  ·  AI sorts when available"; color: Atelier.dim; font-size: 10px; vertical-alignment: center; horizontal-stretch: 1; }
+                            ActionButton { label: "Capture note  ↗"; primary: true; available: root.draft != ""; clicked => { root.add-main-note(root.draft); } }
                         }
                     }
                 }
+                if root.last-saved-category != "": Rectangle { height: 55px; border-radius: 10px; background: #1d251e; border-width: 1px; border-color: #344535;
+                    HorizontalLayout { padding-left: 18px; padding-right: 12px; padding-top: 7px; padding-bottom: 7px; spacing: 12px;
+                        StatusDot { online: true; }
+                        Text { text: "LAST FILED"; color: Atelier.green; font-size: 8px; letter-spacing: 1px; vertical-alignment: center; }
+                        Text { text: root.last-saved-category; color: Atelier.ink; font-size: 12px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                        ActionButton { label: "View collection ↗"; clicked => { root.open-last-note(); } }
+                    }
+                }
+                HorizontalLayout { height: 24px; Eyebrow { text: "AWAITING THEIR PLACE"; color: Atelier.muted; horizontal-stretch: 1; } Text { text: "\{root.main-notes.length} in queue"; color: Atelier.dim; font-size: 11px; } }
+                if root.ai-progress != "": Text { text: root.ai-progress; color: Atelier.gold; font-size: 12px; wrap: word-wrap; }
+                queue-scroll := ScrollView { vertical-stretch: 1;
+                    VerticalLayout { width: queue-scroll.visible-width; spacing: 10px;
+                        if root.main-notes.length == 0: Rectangle { height: 104px; border-radius: 12px; border-width: 1px; border-color: Atelier.border;
+                            VerticalLayout { alignment: center; spacing: 8px; Text { text: "A clear desk. A clear mind."; color: Atelier.ink; font-family: "Georgia"; font-size: 22px; horizontal-alignment: center; } Text { text: "New notes appear here while AI finds the right collection."; color: Atelier.dim; font-size: 12px; horizontal-alignment: center; } }
+                        }
+                        for note in root.main-notes: ClassNoteItem { note-text: note.text; date: "Saved on this PC · awaiting AI"; delete-note => { root.delete-main-note(note.id); } }
+                    }
+                }
+            }
 
-                Rectangle {
-                    height: 90px;
-                    border-radius: 10px;
-                    background: #12122a;
-                    border-color: input-field.has-focus ? #6c63ff : #252545;
-                    border-width: 1.5px;
-                    
-                    input-field := TextEdit {
-                        x: 10px;
-                        y: 10px;
-                        width: parent.width - 20px;
-                        height: parent.height - 20px;
-                        font-size: 14px;
-                        wrap: word-wrap;
-                        placeholder-text: "Write a note and press Enter…";
-                        key-pressed(ev) => {
-                            if ev.text == "\n" && !ev.modifiers.shift {
-                                root.add-main-note(self.text);
-                                self.text = "";
-                                accept
-                            } else if ev.modifiers.control && (ev.text == "v" || ev.text == "м") {
-                                self.paste();
-                                accept
-                            } else if ev.modifiers.control && (ev.text == "a" || ev.text == "ф") {
-                                self.select-all();
-                                accept
-                            } else {
-                                reject
+            if root.current-page == Page.Classes: ClassesPage { vertical-stretch: 1; rows: root.rows; new-total: root.new-total;
+                class-selected(name) => { root.selected-class = name; root.current-page = Page.ClassDetail; root.class-opened(name); }
+            }
+            if root.current-page == Page.ClassDetail: ClassNotesPage { vertical-stretch: 1; class-name: root.selected-class; notes: root.class-notes; draft <=> root.class-draft;
+                newest-first: root.notes-newest-first;
+                sort-notes => { root.notes-newest-first = !root.notes-newest-first; root.sort-notes(); }
+                go-back => { root.current-page = Page.Classes; }
+                delete-note(id) => { root.delete-class-note(id); }
+                add-note(text) => { root.add-class-note(text, root.selected-class); }
+                delete-class(name) => { root.delete-class-wrapper(name); }
+                rename-class(name) => { root.rename-class-wrapper(root.selected-class, name); }
+            }
+
+            if root.current-page == Page.SearchResults: VerticalLayout { spacing: 18px; vertical-stretch: 1;
+                Eyebrow { text: "FOLLOW YOUR CURIOSITY"; }
+                PageHeading { text: "Find your next connection."; }
+                HorizontalLayout { height: 40px; spacing: 8px;
+                    ActionButton { label: "My notes"; primary: !root.web-mode; clicked => { root.cancel-search(); root.web-mode = false; root.search-message = ""; root.search-busy = false; } }
+                    ActionButton { label: "The web"; primary: root.web-mode; clicked => { root.cancel-search(); root.web-mode = true; root.search-message = ""; root.search-busy = false; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: root.web-mode ? "POWERED BY DUCKDUCKGO" : "SEMANTIC SEARCH · OLLAMA"; font-size: 8px; letter-spacing: 1px; color: Atelier.dim; vertical-alignment: center; }
+                }
+                HorizontalLayout { spacing: 12px;
+                    Field { text <=> root.query; placeholder: root.web-mode ? "Explore the web…" : "Describe what you remember…"; horizontal-stretch: 1; accepted => { root.search-now(); } }
+                    ActionButton { label: root.search-busy ? "Search again ↗" : "Search  ↗"; primary: true; available: root.query != ""; clicked => { root.search-now(); } }
+                }
+                HorizontalLayout { height: 38px; spacing: 12px;
+                    Text { text: root.search-busy ? "Searching…" : root.search-message; color: root.search-busy ? Atelier.gold : Atelier.muted; font-size: 12px; horizontal-stretch: 1; wrap: word-wrap; vertical-alignment: center; }
+                    if root.web-mode: Rectangle { width: 122px; Text { text: "Open in browser ↗"; color: Atelier.gold; font-size: 11px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.open-browser-search(); } } }
+                }
+                if root.web-mode: Text { text: "Only your search query is sent to DuckDuckGo. Save a source to keep it in your library."; color: Atelier.dim; font-size: 10px; wrap: word-wrap; }
+                search-scroll := ScrollView { vertical-stretch: 1;
+                    VerticalLayout { width: search-scroll.visible-width; spacing: 12px;
+                        if !root.web-mode: VerticalLayout { spacing: 12px; for note in root.search-results: ClassNoteItem { note-text: note.text; date: note.date; can-delete: false; } }
+                        if root.web-mode: VerticalLayout { spacing: 12px; for result[index] in root.web-results: Rectangle {
+                            height: max(180px, result-snippet.preferred-height + 124px); border-radius: 12px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+                            VerticalLayout { padding: 20px; spacing: 10px;
+                                Text { text: result.domain; color: Atelier.gold; font-size: 10px; }
+                                Text { text: result.title; color: Atelier.ink; font-family: "Georgia"; font-size: 21px; wrap: word-wrap; }
+                                result-snippet := Text { text: result.snippet; color: Atelier.muted; font-size: 13px; wrap: word-wrap; vertical-stretch: 1; }
+                                HorizontalLayout { spacing: 12px;
+                                    ActionButton { label: "Open source ↗"; clicked => { root.open-web-result(index); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    ActionButton { label: result.saved ? "Saved to queue ✓" : "Save as note  +"; available: !result.saved; primary: !result.saved; clicked => { root.save-web-result(index); } }
+                                }
+                            }
+                        }
+                        }
+                        if (root.web-mode ? root.web-results.length == 0 : root.search-results.length == 0) && !root.search-busy && root.search-message == "": Rectangle { height: 160px;
+                            VerticalLayout { alignment: center; spacing: 10px;
+                                Text { text: root.web-mode ? "A world beyond your notes." : "A thought is never far away."; font-family: "Georgia"; font-size: 24px; color: Atelier.ink; horizontal-alignment: center; }
+                                Text { text: root.web-mode ? "Search, explore a source, and save what matters." : "Search by meaning, even when the exact words escape you."; font-size: 12px; color: Atelier.muted; horizontal-alignment: center; }
                             }
                         }
                     }
                 }
             }
 
-            // Page Classes: classes grid
-            if root.current-page == Page.Classes: ClassesPage {
-                vertical-stretch: 1;
-                rows: root.rows;
-                class-selected(name) => {
-                    root.selected-class = name;
-                    root.current-page = Page.ClassDetail;
-                    root.class-opened(name);
-                }
-                on-semantic-search(text) => { root.on-semantic-search-wrapper(text); debug("SEMANTIC SEARCH TEXT \{text}") }
-            }
-
-            // Page SearchResults: semantic search results
-            if root.current-page == Page.SearchResults: VerticalLayout {
-                vertical-stretch: 1;
-                spacing: 12px;
-
-                HorizontalLayout {
-                    height: 36px;
-                    spacing: 12px;
-
-                    Rectangle {
-                        width: 90px;
-                        height: 32px;
-                        border-radius: 8px;
-                        background: back-search-ta.has-hover ? #252540 : #1a1a32;
-                        border-color: #2a2a44;
-                        border-width: 1px;
-
-                        back-search-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.current-page = Page.Classes; }
-                        }
-
-                        HorizontalLayout {
-                            padding-left: 10px;
-                            spacing: 6px;
-                            alignment: start;
-                            Text { text: "←"; font-size: 14px; color: #9898b4; vertical-alignment: center; }
-                            Text { text: "Back"; font-size: 13px; color: #9898b4; vertical-alignment: center; }
-                        }
-                    }
-
-                    Text {
-                        text: "Search results";
-                        font-size: 20px;
-                        font-weight: 700;
-                        color: #dcdcee;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-                }
-
-                sr-scroll := ScrollView {
-                    vertical-stretch: 1;
-
-                    VerticalLayout {
-                        spacing: 4px;
-                        padding: 2px;
-                        width: sr-scroll.visible-width - 4px;
-
-                        for note in root.search-results: ClassNoteItem {
-                            note-text: note.text;
-                            date: note.date;
-                            delete-note => { }
-                        }
-                    }
-                }
-            }
-
-            // Page ClassDetail: notes inside a class
-            if root.current-page == Page.ClassDetail: ClassNotesPage {
-                vertical-stretch: 1;
-                class-name:  root.selected-class;
-                notes:       root.class-notes;
-                go-back      => { root.current-page = Page.Classes; }
-                delete-note(i) => { root.delete-class-note(i); debug("ROOT NOTE ID \{i}")}
-                add-note(text) => { root.add-class-note(text, root.selected-class); debug("CLASS NOTE FROM UI ADD \{text}") }
-                delete-class(class_name) => {
-                    root.delete_class_wrapper(class_name);
-                    root.current-page = Page.Classes;
-                    debug("DELETING CLASS \{class_name}")
-                }
-                rename-class(new_name) => {
-                    root.rename-class-wrapper(root.selected-class, new_name);
-                    root.selected-class = new_name;
-                }
-            }
-
-            // Page Settings
-            if root.current-page == Page.Settings: SettingsPage {
-                vertical-stretch: 1;
-                llm-model <=> root.llm-model;
-                embeddings-model <=> root.embeddings-model;
-                search-limit <=> root.search-limit;
-                save-settings => { root.save-settings(); }
+            if root.current-page == Page.Settings: SettingsPage { vertical-stretch: 1;
+                llm-model <=> root.llm-model; embeddings-model <=> root.embeddings-model; search-limit <=> root.search-limit;
+                classification-web <=> root.classification-web;
+                sync-enabled <=> root.sync-enabled; sync-port <=> root.sync-port; sync-running: root.sync-running; sync-status: root.sync-status; sync-devices: root.sync-devices; sync-token: root.sync-token; sync-qr: root.sync-qr; sync-address: root.sync-address;
+                llm-running: root.llm-running; llm-status: root.llm-status;
+                transfer-status: root.transfer-status;
+                import-requested => { root.import-requested(); }
+                export-data(kind) => { root.export-data(kind); }
+                reset-sync-pairing => { root.reset-sync-pairing(); } save-settings => { root.save-settings(); }
             }
         }
     }
 
-    // ── Tooltips — direct children of AppWindow so they render above everything ──
-    // Declared AFTER the layout, so painted on top (Slint draws in declaration order).
-    if !root.sidebar-open && si-home.is-hovered: Tooltip {
-        x: root.tip-x;
-        y: si-home.y + root.tip-oy;
-        label: si-home.label;
-    }
-    if !root.sidebar-open && si-notes.is-hovered: Tooltip {
-        x: root.tip-x;
-        y: si-notes.y + root.tip-oy;
-        label: si-notes.label;
+    if root.import-confirmation: Rectangle {
+        background: #000000bb;
+        TouchArea { }
+        Rectangle { width: min(540px,parent.width - 48px); height: 380px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; border-radius: 16px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+            VerticalLayout { padding: 28px; spacing: 20px;
+                Eyebrow { text: "BRING YOUR THOUGHTS HOME"; }
+                PageHeading { text: "Import this backup?"; font-size: 30px; }
+                Text { text: root.import-preview; color: Atelier.muted; font-size: 13px; wrap: word-wrap; vertical-stretch: 1; }
+                HorizontalLayout { spacing: 12px; ActionButton { label: "Cancel"; clicked => { root.import-cancelled(); } } Rectangle { horizontal-stretch: 1; } ActionButton { label: "Import notes ↗"; primary: true; clicked => { root.import-confirmed(); } } }
+            }
+        }
     }
 
-    // ── Alert banner ─────────────────────────────────────────────────────────────
+    if root.notice-visible && !root.alert-visible: Rectangle {
+        x: root.width - self.width - 28px; y: root.height - self.height - 24px;
+        width: min(460px, root.width - 56px); height: 88px; border-radius: 12px;
+        background: #242c23; border-width: 1px; border-color: #69735b;
+        drop-shadow-blur: 24px; drop-shadow-color: #00000066;
+        HorizontalLayout { padding: 18px; spacing: 14px;
+            VerticalLayout { spacing: 5px; horizontal-stretch: 1;
+                Text { text: "FILED IN " + root.last-saved-category; color: Atelier.gold; font-size: 10px; overflow: elide; }
+                Text { text: root.last-saved-text; color: Atelier.ink; font-size: 12px; overflow: elide; }
+            }
+            ActionButton { label: "View ↗"; clicked => { root.open-last-note(); } }
+            Rectangle { width: 14px; Text { text: "×"; color: Atelier.muted; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.notice-visible = false; } } }
+        }
+    }
     if root.alert-visible: Rectangle {
-        x: (root.width - self.width) / 2;
-        y: root.height - self.height - 24px;
-        width: alert-text.preferred-width + 48px;
-        height: 44px;
-        border-radius: 10px;
-        background: #3a1a1a;
-        border-color: #cc4444;
-        border-width: 1.5px;
-        drop-shadow-color: #00000099;
-        drop-shadow-blur: 16px;
-        drop-shadow-offset-y: 4px;
-
-        HorizontalLayout {
-            padding-left: 16px;
-            padding-right: 12px;
-            spacing: 10px;
-
-            alert-text := Text {
-                text: root.alert-message;
-                font-size: 13px;
-                color: #ff8888;
-                vertical-alignment: center;
-            }
-
-            Rectangle {
-                width: 24px;
-                height: 24px;
-                border-radius: 12px;
-                background: close-touch.has-hover ? #cc4444 : transparent;
-                close-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.alert-visible = false; }
-                }
-                Text {
-                    text: "✖️";
-                    font-size: 12px;
-                    color: #ff8888;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
+        x: root.width - self.width - 28px; y: root.height - self.height - 24px;
+        width: min(500px, root.width - 56px); height: max(72px, error-text.preferred-height + 32px); border-radius: 12px;
+        background: root.alert-success ? #1d251e : #352521; border-width: 1px; border-color: root.alert-success ? #344535 : #805c50;
+        HorizontalLayout { padding: 16px; spacing: 14px;
+            error-text := Text { text: root.alert-message; color: root.alert-success ? Atelier.green : Atelier.red; font-size: 12px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+            ActionButton { label: "Dismiss"; clicked => { root.alert-visible = false; } }
         }
     }
 }

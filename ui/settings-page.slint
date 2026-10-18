@@ -1,108 +1,92 @@
-import { LineEdit, SpinBox } from "std-widgets.slint";
+import { ScrollView, SpinBox } from "std-widgets.slint";
+import { Atelier, ActionButton, Field, Eyebrow, PageHeading, StatusDot, Toggle } from "atelier.slint";
 
 export component SettingsPage inherits Rectangle {
-    background: transparent;
-
     in-out property <string> llm-model;
     in-out property <string> embeddings-model;
-    in-out property <int>    search-limit;
-
+    in-out property <int> search-limit;
+    in-out property <bool> classification-web;
+    in-out property <bool> sync-enabled;
+    in-out property <string> sync-port: "8743";
+    in property <bool> sync-running;
+    in property <string> sync-status;
+    in property <string> sync-devices;
+    in property <string> sync-token;
+    in property <image> sync-qr;
+    in property <string> sync-address;
+    in property <bool> llm-running;
+    in property <string> llm-status;
+    callback reset-sync-pairing();
     callback save-settings();
-
-    HorizontalLayout {
-
-        // Контент прибит влево, фиксированная ширина
-        VerticalLayout {
-            width: 400px;
-            spacing: 24px;
-            alignment: start;
-
-            Text {
-                text: "Settings";
-                font-size: 20px;
-                font-weight: 700;
-                color: #dcdcee;
-            }
-
-            // LLM model
-            VerticalLayout {
-                spacing: 6px;
-                Text { text: "LLM model"; font-size: 12px; color: #66667a; }
-                Rectangle {
-                    height: 38px;
-                    border-radius: 8px;
-                    background: #12122a;
-                    border-color: llm-input.has-focus ? #6c63ff : #252545;
-                    border-width: 1.5px;
-
-                    llm-input := LineEdit {
-                        x: 10px;
-                        width: parent.width - 20px;
-                        height: parent.height;
-                        text <=> root.llm-model;
-                        font-size: 14px;
-                        placeholder-text: "e.g. qwen3:4b-thinking";
+    callback import-requested();
+    callback export-data(string);
+    in property <string> transfer-status;
+    property <bool> show-key: false;
+    VerticalLayout { spacing: 20px;
+        Eyebrow { text: "MAKE YOURSELF AT HOME"; }
+        HorizontalLayout { PageHeading { text: "Considered, down to the detail."; font-size: 30px; horizontal-stretch: 1; } ActionButton { label: "Save changes ↗"; primary: true; clicked => { root.save-settings(); } } }
+        preferences-scroll := ScrollView { vertical-stretch: 1;
+            HorizontalLayout { width: preferences-scroll.visible-width; spacing: 20px; alignment: start;
+                VerticalLayout { width: (preferences-scroll.visible-width - 20px) / 2; spacing: 18px; alignment: start;
+                    Rectangle { border-radius: 14px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+                        VerticalLayout { padding: 22px; spacing: 18px; alignment: start;
+                            Eyebrow { text: "INTELLIGENCE"; }
+                            Text { text: "Your private assistant."; font-family: "Georgia"; font-size: 23px; color: Atelier.ink; wrap: word-wrap; }
+                            HorizontalLayout { height: 24px; spacing: 8px; StatusDot { online: root.llm-running; } Text { text: root.llm-status; color: Atelier.muted; font-size: 11px; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; } }
+                            Text { text: "Classification model"; color: Atelier.muted; font-size: 11px; }
+                            Field { text <=> root.llm-model; placeholder: "qwen3:4b-thinking"; }
+                            Text { text: "Embedding model"; color: Atelier.muted; font-size: 11px; }
+                            Field { text <=> root.embeddings-model; placeholder: "nomic-embed-text-v2-moe:latest"; }
+                            Text { text: "Semantic search result limit"; color: Atelier.muted; font-size: 11px; }
+                            SpinBox { value <=> root.search-limit; minimum: 1; maximum: 50; }
+                            Text { text: "Ollama processes your notes on this PC. Model changes apply to the next operation. Changing embedding models may require rebuilding the index."; color: Atelier.dim; font-size: 11px; wrap: word-wrap; }
+                        }
+                    }
+                    Rectangle { border-radius: 14px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+                        VerticalLayout { padding: 22px; spacing: 14px;
+                            Eyebrow { text: "YOURS TO KEEP"; }
+                            Text { text: "Your notes. Anywhere."; font-family: "Georgia"; font-size: 23px; color: Atelier.ink; wrap: word-wrap; }
+                            Text { text: "Export all collections and queued notes. Restore an old SQLite backup or a Notes AI JSON archive without replacing current notes."; color: Atelier.muted; font-size: 12px; wrap: word-wrap; }
+                            ActionButton { label: "Export backup (.db) ↗"; primary: true; clicked => { root.export-data("db"); } }
+                            HorizontalLayout { spacing: 10px; ActionButton { label: "Export JSON"; clicked => { root.export-data("json"); } } ActionButton { label: "Export Markdown"; clicked => { root.export-data("md"); } } }
+                            ActionButton { label: "Import backup…"; clicked => { root.import-requested(); } }
+                            Text { text: "Backups retain the search index. JSON is portable; Markdown is for reading. Pairing keys and service settings are not exported."; color: Atelier.dim; font-size: 10px; wrap: word-wrap; }
+                            if root.transfer-status != "": Text { text: root.transfer-status; color: Atelier.green; font-size: 11px; wrap: word-wrap; }
+                        }
+                    }
+                    Rectangle { border-radius: 14px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+                        VerticalLayout { padding: 22px; spacing: 12px;
+                            Eyebrow { text: "A WINDOW TO THE WEB"; }
+                            Text { text: "Search with DuckDuckGo."; font-family: "Georgia"; font-size: 22px; color: Atelier.ink; wrap: word-wrap; }
+                            Toggle { label: "Use web context for unfamiliar names"; checked <=> root.classification-web; }
+                            Text { text: "AI can look up a short name from a note when it needs context. Only that term is sent to DuckDuckGo. One lookup per classification, cached for 24 hours. Apply with Save changes."; color: Atelier.muted; font-size: 12px; wrap: word-wrap; }
+                        }
                     }
                 }
-            }
-
-            // Embeddings model
-            VerticalLayout {
-                spacing: 6px;
-                Text { text: "Embeddings model"; font-size: 12px; color: #66667a; }
-                Rectangle {
-                    height: 38px;
-                    border-radius: 8px;
-                    background: #12122a;
-                    border-color: emb-input.has-focus ? #6c63ff : #252545;
-                    border-width: 1.5px;
-
-                    emb-input := LineEdit {
-                        x: 10px;
-                        width: parent.width - 20px;
-                        height: parent.height;
-                        text <=> root.embeddings-model;
-                        font-size: 14px;
-                        placeholder-text: "e.g. nomic-embed-text-v2-moe:latest";
+                Rectangle { width: (preferences-scroll.visible-width - 20px) / 2; border-radius: 14px; background: Atelier.surface; border-width: 1px; border-color: Atelier.border;
+                    VerticalLayout { padding: 22px; spacing: 15px; alignment: start;
+                        Eyebrow { text: "CONNECTED, ON YOUR TERMS"; }
+                        Text { text: "From desk to pocket."; font-family: "Georgia"; font-size: 23px; color: Atelier.ink; }
+                        Toggle { label: "Enable phone sync"; checked <=> root.sync-enabled; toggled => { root.save-settings(); } }
+                        HorizontalLayout { height: 22px; spacing: 8px; StatusDot { online: root.sync-running; } Text { text: root.sync-running ? "Server is listening" : "Server is stopped"; color: root.sync-running ? Atelier.green : Atelier.red; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; } }
+                        Text { text: root.sync-status; color: Atelier.muted; font-size: 11px; wrap: word-wrap; }
+                        Text { text: "PC address"; color: Atelier.dim; font-size: 10px; }
+                        Field { text: root.sync-address; read-only: true; }
+                        Text { text: "Port · apply with Save changes"; color: Atelier.muted; font-size: 11px; }
+                        Field { text <=> root.sync-port; placeholder: "8743"; accepted => { root.save-settings(); } }
+                        Rectangle { height: 202px; background: #ffffff; border-radius: 10px;
+                            Image { source: root.sync-qr; width: 190px; height: 190px; x: (parent.width - self.width) / 2; y: 6px; image-fit: contain; }
+                        }
+                        Text { text: "Scan in Notes AI Phone, or enter the PC address, port and pairing key manually."; color: Atelier.muted; font-size: 11px; wrap: word-wrap; }
+                        HorizontalLayout { height: 18px; Text { text: "Pairing key"; color: Atelier.muted; font-size: 11px; horizontal-stretch: 1; } Rectangle { width: 38px; Text { text: root.show-key ? "Hide" : "Show"; color: Atelier.gold; font-size: 11px; } TouchArea { mouse-cursor: pointer; clicked => { root.show-key = !root.show-key; } } } }
+                        Field { text: root.sync-token; secret: !root.show-key; read-only: true; }
+                        Text { text: "DEVICES"; color: Atelier.gold; font-size: 9px; letter-spacing: 1px; }
+                        Text { text: root.sync-devices == "" ? "No phones connected yet." : root.sync-devices; color: Atelier.muted; font-size: 12px; wrap: word-wrap; }
+                        Text { text: "Online means a sync within 45 seconds. Use a trusted local network; notes travel over local HTTP."; color: Atelier.dim; font-size: 10px; wrap: word-wrap; }
+                        ActionButton { label: "Reset pairing for all phones"; danger: true; clicked => { root.reset-sync-pairing(); } }
                     }
-                }
-            }
-
-            // Search limit
-            VerticalLayout {
-                spacing: 6px;
-                Text { text: "Semantic search results limit"; font-size: 12px; color: #66667a; }
-                SpinBox {
-                    width: 120px;
-                    value <=> root.search-limit;
-                    minimum: 1;
-                    maximum: 50;
-                }
-            }
-
-            // Save button
-            Rectangle {
-                height: 38px;
-                width: 120px;
-                border-radius: 8px;
-                background: save-ta.has-hover ? #5a52e0 : #3d36b0;
-
-                save-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.save-settings(); }
-                }
-
-                Text {
-                    text: "Save";
-                    font-size: 14px;
-                    color: #ffffff;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
                 }
             }
         }
-
-        // Заполняет оставшееся пространство справа
-        Rectangle { horizontal-stretch: 1; }
     }
 }

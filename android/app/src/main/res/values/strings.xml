@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Notes AI</string>
+    <string name="status_label">●  %1$s</string>
+    <string name="status_connected">●  Connected</string>
+    <string name="status_disconnected">●  Offline</string>
+    <string name="show_pairing_key">Show pairing key</string>
+    <string name="waiting_total">%1$d waiting to send</string>
+    <string name="pc_total">%1$d on your PC</string>
+    <string name="library_total">%1$d notes · available offline</string>
+</resources>

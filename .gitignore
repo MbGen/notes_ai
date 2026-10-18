@@ -2,3 +2,10 @@
 /data
 /.cargo
 /.vscode
+/android/.gradle/
+/android/local.properties
+/android/**/build/
+
+/dist/
+*.keystore
+*.jks
