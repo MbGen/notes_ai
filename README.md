@@ -127,6 +127,21 @@ path to the PC. Closed-app Android background sync is still pending.
 
 ## Validation and previews
 
+### Windows installer
+
+Download `NotesAI-0.5.1-Setup-x64.exe` from Releases for an offline installation
+including Laya and its CPU runtime. Choose a writable installation folder on any
+drive. The installer creates shortcuts, enables Laya on a fresh installation,
+and preserves existing `data/` on upgrades and uninstall. Ollama is optional for
+Laya classification into existing collections; new collection suggestions and
+semantic search still use Ollama. The small standalone EXE and portable ZIP do
+not include the model.
+
+Build the installer with Inno Setup 6 and `scripts/build-installer.ps1`, passing
+`-Binary`, `-LayaDirectory`, `-RuntimeDirectory`, `-Compiler` and
+`-OutputDirectory`. The script packages only runtime files and the supplied
+model, never the source installation's personal database or settings.
+
 ```sh
 cargo test --target x86_64-pc-windows-msvc
 cargo build --target x86_64-pc-windows-msvc
