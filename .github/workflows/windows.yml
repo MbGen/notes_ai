@@ -28,7 +28,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: windows-rust-${{ hashFiles('Cargo.lock') }}
+          key: windows-rust-v2-${{ hashFiles('Cargo.lock') }}
           restore-keys: windows-rust-
       - name: Test and build portable Windows app
         shell: pwsh
@@ -47,6 +47,8 @@ jobs:
           if errorlevel 1 exit /b 1
           $testCommands
           cargo build --locked --release --target x86_64-pc-windows-msvc
+          if errorlevel 1 exit /b 1
+          cargo build --locked --release --example render_previews --target x86_64-pc-windows-msvc
           exit /b %errorlevel%
           "@ | Set-Content ci-build.cmd -Encoding ascii
           & cmd.exe /d /c ci-build.cmd
@@ -63,6 +65,7 @@ jobs:
           path: |
             dist/NotesAI-0.5.0-windows-x64.zip
             target/x86_64-pc-windows-msvc/release/notes_ai.exe
+            target/x86_64-pc-windows-msvc/release/examples/render_previews.exe
           if-no-files-found: ignore
           retention-days: 7
       - uses: actions/cache/save@v6.1.0
@@ -72,4 +75,4 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: windows-rust-${{ hashFiles('Cargo.lock') }}
+          key: windows-rust-v2-${{ hashFiles('Cargo.lock') }}

@@ -67,7 +67,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_last_saved_text(
         "A quiet weekend by the sea. Save the small hotel with the courtyard.".into(),
     );
-    ui.set_main_notes(ModelRc::new(VecModel::from(vec![NoteData{id:1,text:"The best ideas arrive when there is room to think. Leave a little space in tomorrow's calendar.".into(),date:"Awaiting AI".into()}])));
+    ui.set_main_notes(ModelRc::new(VecModel::from(vec![QueueData{id:1,text:"The best ideas arrive when there is room to think. Leave a little space in tomorrow's calendar.".into(),status:"Laya is classifying this note…".into(),active:true}])));
+    ui.set_filed_history(ModelRc::new(VecModel::from(vec![HistoryData{id:2,text:"A quiet weekend by the sea.".into(),category:"Places & experiences".into()},HistoryData{id:3,text:"Banshee TV series".into(),category:"TV series".into()}])));
     render(&ui, &window, &output, "atelier-capture", width, height)?;
     let names = [
         ("Ideas & inspiration", 7, 2),
@@ -121,6 +122,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_web_results(ModelRc::new(VecModel::from(vec![WebResultData{title:"A little more space for what matters".into(),url:"https://example.org/reading".into(),domain:"example.org".into(),snippet:"A fictional source used to preview the reading experience. Real searches show the provider's titles, descriptions and source links.".into(),saved:false}])));
     render(&ui, &window, &output, "atelier-discover", width, height)?;
     ui.set_current_page(Page::Settings);
+    ui.set_use_laya(true);
+    ui.set_llm_status("Laya ready · local CPU".into());
     render(&ui, &window, &output, "atelier-preferences", width, height)?;
     println!("Rendered five Slint screens at {width}×{height}");
     Ok(())
