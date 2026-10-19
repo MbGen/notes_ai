@@ -1,4 +1,4 @@
-Notes AI 0.5.0 - Windows x64 portable
+Notes AI 0.5.1 - Windows x64 portable
 
 Extract this ZIP to a writable folder, for example D:\Apps\NotesAI.
 Open NotesAI.exe. Its icon, UI images and SQLite engine are embedded.
