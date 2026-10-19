@@ -1,6 +1,6 @@
 import { ScrollView, Palette } from "std-widgets.slint";
 import { Atelier, ActionButton, Field, Eyebrow, PageHeading, StatusDot, NoteEditor } from "atelier.slint";
-import { ClassesPage, ClassNotesPage, ClassNoteItem, ClassTileData, TileRow, NoteData, WebResultData } from "classes-page.slint";
+import { ClassesPage, ClassNotesPage, ClassNoteItem, QueueNoteItem, ClassTileData, TileRow, NoteData, QueueData, HistoryData, WebResultData } from "classes-page.slint";
 import { SettingsPage } from "settings-page.slint";
 import { Page } from "types.slint";
 
@@ -39,7 +39,13 @@ export component AppWindow inherits Window {
     in-out property <bool> classification-web: true;
     in-out property <string> ai-progress;
     callback sort-notes();
-    in-out property <[NoteData]> main-notes;
+    in-out property <[QueueData]> main-notes;
+    in-out property <[HistoryData]> filed-history;
+    in-out property <string> collection-draft;
+    in-out property <bool> use-laya;
+    in-out property <bool> laya-fallback: true;
+    callback create-collection(string);
+    callback open-filed-note(int);
     in-out property <[NoteData]> search-results;
     in-out property <[WebResultData]> web-results;
     in-out property <int> new-total;
@@ -76,6 +82,7 @@ export component AppWindow inherits Window {
     in-out property <string> alert-message;
     in-out property <bool> alert-visible;
     in-out property <bool> alert-success;
+    Timer { interval: 2800ms; running: root.alert-visible && root.alert-success; triggered => { root.alert-visible = false; } }
     in-out property <string> llm-model;
     in-out property <string> embeddings-model;
     in-out property <int> search-limit;
@@ -139,45 +146,52 @@ export component AppWindow inherits Window {
             }
             Rectangle { height: 1px; background: Atelier.border; }
 
-            if root.current-page == Page.Main: VerticalLayout { spacing: 22px; vertical-stretch: 1;
+            if root.current-page == Page.Main: VerticalLayout { spacing: 14px; vertical-stretch: 1;
                 VerticalLayout { spacing: 10px;
                     Eyebrow { text: "ROOM FOR YOUR NEXT GREAT THOUGHT"; }
                     PageHeading { text: "Clear your mind."; font-size: 46px; }
                     Text { text: "Capture a thought. Let AI find its place."; color: Atelier.muted; font-size: 14px; }
                 }
-                Rectangle { height: 210px; border-radius: 16px; background: Atelier.surface; border-width: 1px; border-color: compose.has-focus ? #796c50 : Atelier.border;
+                Rectangle { height: 178px; border-radius: 16px; background: Atelier.surface; border-width: 1px; border-color: compose.has-focus ? #796c50 : Atelier.border;
                     VerticalLayout { padding: 20px; spacing: 14px;
                         HorizontalLayout { height: 16px; Eyebrow { text: "A NEW NOTE"; color: Atelier.dim; font-size: 8px; horizontal-stretch: 1; } Text { text: "PRIVATE BY DEFAULT"; color: Atelier.dim; font-size: 8px; letter-spacing: 1px; } }
                         compose := NoteEditor { text <=> root.draft; placeholder: "An idea, a recommendation, something worth keeping…"; vertical-stretch: 1;
                             capture => { if root.draft != "" { root.add-main-note(root.draft); } }
                         }
                         HorizontalLayout { height: 40px;
-                            Text { text: "Ctrl + Enter to capture  ·  AI sorts when available"; color: Atelier.dim; font-size: 10px; vertical-alignment: center; horizontal-stretch: 1; }
+                            Text { text: "Enter to capture · Shift + Enter for a new line"; color: Atelier.dim; font-size: 10px; vertical-alignment: center; horizontal-stretch: 1; }
                             ActionButton { label: "Capture note  ↗"; primary: true; available: root.draft != ""; clicked => { root.add-main-note(root.draft); } }
                         }
                     }
                 }
-                if root.last-saved-category != "": Rectangle { height: 55px; border-radius: 10px; background: #1d251e; border-width: 1px; border-color: #344535;
-                    HorizontalLayout { padding-left: 18px; padding-right: 12px; padding-top: 7px; padding-bottom: 7px; spacing: 12px;
-                        StatusDot { online: true; }
-                        Text { text: "LAST FILED"; color: Atelier.green; font-size: 8px; letter-spacing: 1px; vertical-alignment: center; }
-                        Text { text: root.last-saved-category; color: Atelier.ink; font-size: 12px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
-                        ActionButton { label: "View collection ↗"; clicked => { root.open-last-note(); } }
+                if root.filed-history.length > 0: VerticalLayout { spacing: 6px;
+                    Eyebrow { text: "RECENTLY FILED"; color: Atelier.green; font-size: 8px; }
+                    history-scroll := ScrollView { height: 116px;
+                        VerticalLayout { width: history-scroll.visible-width; spacing: 6px;
+                            for item in root.filed-history: Rectangle { height: 48px; border-radius: 8px; background: #1b241e;
+                                HorizontalLayout { padding: 10px; spacing: 12px;
+                                    Text { text: item.text; color: Atelier.ink; font-size: 11px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                                    Text { text: "→  " + item.category; color: Atelier.gold; font-size: 11px; width: 190px; overflow: elide; vertical-alignment: center; }
+                                }
+                                TouchArea { mouse-cursor: pointer; clicked => { root.open-filed-note(item.id); } }
+                            }
+                        }
                     }
                 }
                 HorizontalLayout { height: 24px; Eyebrow { text: "AWAITING THEIR PLACE"; color: Atelier.muted; horizontal-stretch: 1; } Text { text: "\{root.main-notes.length} in queue"; color: Atelier.dim; font-size: 11px; } }
-                if root.ai-progress != "": Text { text: root.ai-progress; color: Atelier.gold; font-size: 12px; wrap: word-wrap; }
                 queue-scroll := ScrollView { vertical-stretch: 1;
                     VerticalLayout { width: queue-scroll.visible-width; spacing: 10px;
                         if root.main-notes.length == 0: Rectangle { height: 104px; border-radius: 12px; border-width: 1px; border-color: Atelier.border;
                             VerticalLayout { alignment: center; spacing: 8px; Text { text: "A clear desk. A clear mind."; color: Atelier.ink; font-family: "Georgia"; font-size: 22px; horizontal-alignment: center; } Text { text: "New notes appear here while AI finds the right collection."; color: Atelier.dim; font-size: 12px; horizontal-alignment: center; } }
                         }
-                        for note in root.main-notes: ClassNoteItem { note-text: note.text; date: "Saved on this PC · awaiting AI"; delete-note => { root.delete-main-note(note.id); } }
+                        for note in root.main-notes: QueueNoteItem { note-text: note.text; status: note.status; active: note.active; delete-note => { root.delete-main-note(note.id); } }
                     }
                 }
             }
 
             if root.current-page == Page.Classes: ClassesPage { vertical-stretch: 1; rows: root.rows; new-total: root.new-total;
+                collection-draft <=> root.collection-draft;
+                create-collection(name) => { root.create-collection(name); }
                 class-selected(name) => { root.selected-class = name; root.current-page = Page.ClassDetail; root.class-opened(name); }
             }
             if root.current-page == Page.ClassDetail: ClassNotesPage { vertical-stretch: 1; class-name: root.selected-class; notes: root.class-notes; draft <=> root.class-draft;
@@ -236,6 +250,7 @@ export component AppWindow inherits Window {
             }
 
             if root.current-page == Page.Settings: SettingsPage { vertical-stretch: 1;
+                use-laya <=> root.use-laya; laya-fallback <=> root.laya-fallback;
                 llm-model <=> root.llm-model; embeddings-model <=> root.embeddings-model; search-limit <=> root.search-limit;
                 classification-web <=> root.classification-web;
                 sync-enabled <=> root.sync-enabled; sync-port <=> root.sync-port; sync-running: root.sync-running; sync-status: root.sync-status; sync-devices: root.sync-devices; sync-token: root.sync-token; sync-qr: root.sync-qr; sync-address: root.sync-address;

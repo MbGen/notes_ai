@@ -128,6 +128,10 @@ impl Database {
         date: &str,
         embeddings: Vec<f32>,
     ) -> Result<()> {
+        self.finish_queue_optional(queue_id,category,text,date,Some(embeddings))
+    }
+
+    pub fn finish_queue_optional(&self,queue_id:i64,category:&str,text:&str,date:&str,embeddings:Option<Vec<f32>>) -> Result<()> {
         let tx = self.connection().unchecked_transaction()?;
         // The desktop may have removed this queue item while AI was processing it.
         let exists: bool = tx.query_row(
@@ -149,11 +153,13 @@ impl Database {
             params![category_id, text, date],
         )?;
         let id = tx.last_insert_rowid();
-        let bytes: Vec<u8> = embeddings.iter().flat_map(|f| f.to_le_bytes()).collect();
-        tx.execute(
+        if let Some(embeddings)=embeddings {
+            let bytes: Vec<u8> = embeddings.iter().flat_map(|f| f.to_le_bytes()).collect();
+            tx.execute(
             "INSERT INTO note_embeddings(note_id,embedding) VALUES (?1,?2)",
             params![id, bytes],
-        )?;
+            )?;
+        }
         tx.execute(
             "UPDATE sync_receipts SET note_id=?1,queue_id=NULL WHERE queue_id=?2",
             params![id, queue_id],
@@ -208,7 +214,6 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
-    #[cfg(test)]
     pub fn insert_category(&self, name: &str) -> Result<i64> {
         let conn = self.conn.as_ref().unwrap();
         conn.execute("INSERT INTO categories (name) VALUES (?1)", params![name])?;
@@ -281,6 +286,24 @@ impl Database {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_classification_can_commit_without_an_embedding_and_preserves_receipts() {
+        let dir=tempfile::tempdir().unwrap();
+        let db=super::Database::new(dir.path().join("local.db").to_str().unwrap());db.init_schemas().unwrap();
+        let queue=db.insert_to_queue("Banshee TV series").unwrap();
+        db.connection().execute("INSERT INTO sync_receipts(id,queue_id) VALUES ('phone-local',?1)",[queue]).unwrap();
+        db.finish_queue_optional(queue,"TV series","Banshee TV series","today",None).unwrap();
+        assert!(db.get_queue_items().unwrap().is_empty());
+        let note:i64=db.connection().query_row("SELECT note_id FROM sync_receipts WHERE id='phone-local'",[],|r|r.get(0)).unwrap();
+        let count:i64=db.connection().query_row("SELECT count(*) FROM note_embeddings",[],|r|r.get(0)).unwrap();assert_eq!(count,0);
+        db.insert_embeddings_if_text(note,"Banshee TV series",vec![0.0;768]).unwrap();
+        db.finish_queue_optional(queue,"Wrong","Banshee TV series","today",None).unwrap();
+        assert_eq!(db.get_notes(db.get_categories().unwrap()[0].0).unwrap().len(),1);
+        let stale=db.insert_to_queue("old text").unwrap();db.connection().execute("UPDATE notes_queue SET text='edited' WHERE id=?1",[stale]).unwrap();
+        db.finish_queue_optional(stale,"Wrong","old text","today",None).unwrap();
+        assert_eq!(db.get_categories().unwrap().len(),1);
+        assert_eq!(db.get_queue_items().unwrap()[0].1,"edited");
+    }
     use super::*;
     #[test]
     fn recent_collection_order_survives_restart_rename_and_refresh() {

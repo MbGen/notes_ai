@@ -4,6 +4,8 @@ import { Atelier, ActionButton, Field, Eyebrow, PageHeading } from "atelier.slin
 export struct ClassTileData { name: string, count: string, accent: color, new-count: int }
 export struct TileRow { t0: ClassTileData, t1: ClassTileData, t2: ClassTileData, len: int }
 export struct NoteData { id: int, text: string, date: string }
+export struct QueueData { id: int, text: string, status: string, active: bool }
+export struct HistoryData { id: int, text: string, category: string }
 export struct WebResultData { title: string, url: string, domain: string, snippet: string, saved: bool }
 
 component ClassTile inherits Rectangle {
@@ -71,12 +73,40 @@ export component ClassNoteItem inherits Rectangle {
     }
 }
 
+export component QueueNoteItem inherits Rectangle {
+    in property <string> note-text;
+    in property <string> status;
+    in property <bool> active;
+    callback delete-note();
+    property <bool> phase;
+    height: 112px; border-radius: 12px; background: Atelier.surface;
+    border-width: 1px; border-color: root.active ? #796c50 : Atelier.border;
+    Timer { interval: 850ms; running: root.active; triggered => { root.phase = !root.phase; } }
+    VerticalLayout { padding: 16px; spacing: 10px;
+        HorizontalLayout { height: 18px; spacing: 10px;
+            Text { text: root.active ? "●  PROCESSING" : "●  SAVED"; color: root.active ? Atelier.gold : Atelier.green; font-size: 9px; }
+            Text { text: root.status; color: Atelier.muted; font-size: 10px; overflow: elide; horizontal-stretch: 1; }
+            ActionButton { label: "Delete"; height: 24px; clicked => { root.delete-note(); } }
+        }
+        Text { text: root.note-text; color: Atelier.ink; font-size: 14px; overflow: elide; horizontal-stretch: 1; }
+        track := Rectangle { height: 4px; border-radius: 2px; background: Atelier.border; clip: true;
+            Rectangle { height: 4px; width: root.active ? parent.width / 3 : parent.width;
+                x: root.active && root.phase ? parent.width - self.width : 0px;
+                background: root.active ? Atelier.gold : #3a4940;
+                animate x { duration: 820ms; easing: ease-in-out; }
+            }
+        }
+    }
+}
+
 export component ClassesPage inherits Rectangle {
     background: transparent;
     in-out property <[TileRow]> rows;
     in property <int> new-total;
     callback class-selected(string);
     callback on-semantic-search(string);
+    in-out property <string> collection-draft;
+    callback create-collection(string);
     VerticalLayout {
         spacing: 22px;
         Eyebrow { text: "YOUR PERSONAL ARCHIVE"; }
@@ -85,6 +115,10 @@ export component ClassesPage inherits Rectangle {
             Text { text: root.new-total > 0 ? "\{root.new-total} new notes" : "All caught up"; color: root.new-total > 0 ? Atelier.gold : Atelier.muted; font-size: 12px; vertical-alignment: center; }
         }
         Text { text: "Recently opened collections come first. Open a collection to explore what is new."; color: Atelier.muted; font-size: 13px; }
+        HorizontalLayout { spacing: 10px;
+            Field { text <=> root.collection-draft; placeholder: "New collection name…"; horizontal-stretch: 1; accepted => { root.create-collection(root.collection-draft); } }
+            ActionButton { label: "Create collection +"; primary: true; available: root.collection-draft != ""; clicked => { root.create-collection(root.collection-draft); } }
+        }
         if root.rows.length == 0: Rectangle {
             vertical-stretch: 1;
             VerticalLayout { alignment: center; spacing: 14px;
@@ -119,6 +153,7 @@ export component ClassNotesPage inherits Rectangle {
     callback rename-class(string);
     in-out property <string> draft;
     property <bool> editing-name: false;
+    property <string> rename-draft;
     property <bool> confirm-delete: false;
     VerticalLayout {
         spacing: 18px;
@@ -129,8 +164,9 @@ export component ClassNotesPage inherits Rectangle {
         }
         HorizontalLayout { spacing: 12px;
             if !root.editing-name: PageHeading { text: root.class-name; overflow: elide; horizontal-stretch: 1; }
-            if root.editing-name: Field { text: root.class-name; horizontal-stretch: 1; accepted => { if self.text != "" { root.rename-class(self.text); root.editing-name = false; } } }
-            ActionButton { label: root.editing-name ? "Cancel" : "Rename"; clicked => { root.editing-name = !root.editing-name; } }
+            if root.editing-name: Field { text <=> root.rename-draft; horizontal-stretch: 1; accepted => { if root.rename-draft != "" { root.rename-class(root.rename-draft); root.editing-name = false; } } }
+            if root.editing-name: ActionButton { label: "Save name"; primary: true; available: root.rename-draft != ""; clicked => { root.rename-class(root.rename-draft); root.editing-name = false; } }
+            ActionButton { label: root.editing-name ? "Cancel" : "Rename"; clicked => { root.rename-draft = root.class-name; root.editing-name = !root.editing-name; } }
             ActionButton { label: "Delete collection"; danger: true; clicked => { root.confirm-delete = true; } }
         }
         HorizontalLayout { spacing: 12px;

@@ -6,6 +6,8 @@ pub const SETTINGS_PATH: &str = "data/settings.json";
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
+    pub use_laya: bool,
+    pub laya_fallback: bool,
     pub llm_model: String,
     pub embeddings_model: String,
     pub search_limit: u32,
@@ -18,6 +20,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            use_laya: false,
+            laya_fallback: true,
             llm_model: "qwen3:4b-thinking".into(),
             embeddings_model: "nomic-embed-text-v2-moe:latest".into(),
             search_limit: 10,
@@ -61,6 +65,8 @@ mod tests {
         .unwrap();
         assert_eq!(s.llm_model, "custom");
         assert_eq!(s.search_limit, 7);
+        assert!(!s.use_laya);
+        assert!(s.laya_fallback);
         assert!(!s.sync_enabled);
         assert!(uuid::Uuid::parse_str(&s.sync_token).is_ok());
         let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();

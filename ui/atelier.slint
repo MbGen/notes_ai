@@ -125,7 +125,7 @@ export component NoteEditor inherits Rectangle {
             page-height: editor-scroll.visible-height;
             selection-background-color: #d3bc8d55;
             key-pressed(event) => {
-                if (event.text == "\n" || event.text == Key.Return) && event.modifiers.control { root.capture(); accept } else { reject }
+                if (event.text == "\n" || event.text == Key.Return) && !event.modifiers.shift { root.capture(); accept } else { reject }
             }
             cursor-position-changed(position) => {
                 if position.y + editor-scroll.viewport-y < 0px { editor-scroll.viewport-y = -position.y; }

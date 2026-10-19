@@ -13,6 +13,8 @@ use std::{
     time::Duration,
 };
 mod agent;
+mod laya;
+mod queue_state;
 mod data_transfer;
 mod db;
 mod settings;
@@ -39,7 +41,8 @@ enum AgentRequest {
 #[derive(Default)]
 struct ViewState {
     categories: Option<Vec<(i64, String, i64, i64)>>,
-    queue: Option<Vec<(i64, String)>>,
+    queue: Option<Vec<(i64, String, String, bool)>>,
+    history: Option<Vec<(i64,String,String)>>,
     notes: Option<(String, Vec<(i64, String, String)>)>,
     last_id: i64,
 }
@@ -106,19 +109,29 @@ fn refresh(ui: &AppWindow, db: &Database, view: &mut ViewState) -> rusqlite::Res
         ui.set_rows(ModelRc::new(VecModel::from(rows)));
         view.categories = Some(stats);
     }
-    let queue = db.get_queue_items()?;
+    let queue = queue_state::rows(db.get_queue_items()?);
     if view.queue.as_ref() != Some(&queue) {
         ui.set_main_notes(ModelRc::new(VecModel::from(
             queue
                 .iter()
-                .map(|(id, text)| NoteData {
+                .map(|(id, text, status, active)| QueueData {
                     id: *id as i32,
                     text: text.as_str().into(),
-                    date: SharedString::new(),
+                    status: status.as_str().into(),
+                    active: *active,
                 })
                 .collect::<Vec<_>>(),
         )));
         view.queue = Some(queue);
+    }
+    let history={
+        let mut stmt=db.connection().prepare("SELECT n.id,c.name,n.text FROM notes n JOIN categories c ON c.id=n.category_id ORDER BY n.id DESC LIMIT 12")?;
+        let rows=stmt.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if view.history.as_ref()!=Some(&history) {
+        ui.set_filed_history(ModelRc::new(VecModel::from(history.iter().map(|(id,category,text)|HistoryData{id:*id as i32,category:category.as_str().into(),text:text.as_str().into()}).collect::<Vec<_>>())));
+        view.history=Some(history);
     }
     if let Some((id, category, text)) = db.latest_note()? {
         let notify = id > view.last_id && view.last_id >= 0;
@@ -186,6 +199,8 @@ fn wire_settings(
             }
         };
         let settings = Settings {
+            use_laya: ui.get_use_laya(),
+            laya_fallback: ui.get_laya_fallback(),
             llm_model: ui.get_llm_model().trim().to_string(),
             embeddings_model: ui.get_embeddings_model().trim().to_string(),
             search_limit: ui.get_search_limit() as u32,
@@ -251,7 +266,7 @@ fn wire_notes(
             return;
         }
         match store.insert_to_queue(text) {
-            Ok(_) => ui.set_draft(SharedString::new()),
+            Ok(_) => { ui.set_draft(SharedString::new());ui.set_alert_success(true);ui.set_alert_message("Note saved · added to the processing queue".into());ui.set_alert_visible(true); },
             Err(error) => alert(&ui, format!("Cannot save note: {error}")),
         }
     });
@@ -368,6 +383,22 @@ fn wire_notes(
             }
             Err(error) => alert(&ui, format!("Cannot rename collection: {error}")),
         }
+    });
+    let handle=ui.as_weak();let store=db.clone();
+    ui.on_create_collection(move |name| {
+        let Some(ui)=handle.upgrade() else{return};let name=name.trim();if name.is_empty(){return;}
+        let result=(||->rusqlite::Result<i64>{
+            if store.get_categories()?.iter().any(|(_,n)|n.to_lowercase()==name.to_lowercase()) {
+                return Err(rusqlite::Error::InvalidParameterName("A collection with this name already exists".into()));
+            }
+            store.insert_category(name)
+        })();
+        match result { Ok(_)=>{ui.set_collection_draft("".into());ui.set_selected_class(name.into());ui.set_current_page(Page::ClassDetail);ui.invoke_class_opened(name.into());},Err(e)=>alert(&ui,format!("Cannot create collection: {e}")) }
+    });
+    let handle=ui.as_weak();let store=db.clone();
+    ui.on_open_filed_note(move |id|{
+        let Some(ui)=handle.upgrade() else{return};
+        match store.category_for_note(id as i64) {Ok(name)=>{ui.set_selected_class(name.clone().into());ui.set_current_page(Page::ClassDetail);ui.invoke_class_opened(name.into());},Err(e)=>alert(&ui,format!("Cannot open collection: {e}"))}
     });
     let handle = ui.as_weak();
     ui.on_open_last_note(move || {
@@ -650,6 +681,7 @@ fn spawn_ai(
         let db = Database::new("data/notes.db");
         let mut tick = tokio::time::interval(Duration::from_secs(2));
         let mut last_queue_attempt = 0;
+        let mut laya=laya::LayaRuntime::default();
         loop {
             tokio::select! {
                 request=requests.recv()=>{
@@ -702,14 +734,32 @@ fn spawn_ai(
                     last_queue_attempt=id;
                     let settings=Settings::load();let agent=SortingAgentImpl::from_models(OllamaInstance::new(&settings.llm_model,&settings.embeddings_model));
                     let Ok(categories)=db.get_categories() else{continue};
+                    queue_state::set(id,&text,if settings.use_laya {"Starting Laya · classifying this note…"} else {"Ollama is analyzing this note…"},true);
                     ai_progress(&handle,"Analyzing the next note…");
-                    let Some(category)=agent.classify_note(categories.into_iter().map(|(_,n)|n).collect(),&text,settings.classification_web,|message|ai_progress(&handle,message)).await else{ai_progress(&handle,"AI unavailable or invalid response · will retry");continue};
+                    let mut category=None;
+                    let mut laya_error=None;
+                    if settings.use_laya {
+                        match laya.classify(&categories,&text).await {
+                            Ok(value)=>category=value,
+                            Err(error)=>laya_error=Some(error),
+                        }
+                        if category.is_none() && !settings.laya_fallback {
+                            queue_state::set(id,&text,laya_error.as_deref().unwrap_or("Laya could not choose confidently · enable Ollama fallback or add a collection"),false);continue;
+                        }
+                    } else { laya.stop(); }
+                    if category.is_none() {
+                        if settings.use_laya {queue_state::set(id,&text,"Laya needs help · asking Ollama…",true);}
+                        category=agent.classify_note(categories.into_iter().map(|(_,n)|n).collect(),&text,settings.classification_web,|message|{queue_state::set(id,&text,message,true);ai_progress(&handle,message);}).await;
+                    }
+                    let Some(category)=category else{queue_state::set(id,&text,"AI unavailable or invalid response · saved, will retry",false);continue};
                     if category.trim().is_empty(){continue;}
                     ai_progress(&handle,"Building the search index…");
-                    if let Ok(vector)=agent.get_embeddings(&text).await{
-                        if let Err(error)=db.finish_queue(id,category.trim(),&text,&Local::now().format("%d %B %Y").to_string(),vector){eprintln!("Cannot finish queued note: {error}");}
+                    queue_state::set(id,&text,"Collection chosen · preparing the search index…",true);
+                    let vector=tokio::time::timeout(Duration::from_secs(8),agent.get_embeddings(&text)).await.ok().and_then(Result::ok);
+                    if vector.is_some() || settings.use_laya {
+                        if let Err(error)=db.finish_queue_optional(id,category.trim(),&text,&Local::now().format("%d %B %Y").to_string(),vector){queue_state::set(id,&text,&format!("Cannot save result: {error}"),false);}
                         ai_progress(&handle,"");
-                    }else{ai_progress(&handle,"Embedding model unavailable · will retry");}
+                    }else{queue_state::set(id,&text,"Embedding model unavailable · saved, will retry",false);}
                 }
             }
         }
@@ -724,6 +774,11 @@ fn spawn_ai(
         };
         loop {
             let settings = Settings::load();
+            if settings.use_laya {
+                let installed=laya::installed();let handle=handle.clone();
+                let _=slint::invoke_from_event_loop(move||{if let Some(ui)=handle.upgrade(){ui.set_llm_running(installed);ui.set_llm_status(if installed {"Laya ready · local CPU".into()} else {"Laya bundle missing".into()});}});
+                tokio::time::sleep(Duration::from_secs(5)).await;continue;
+            }
             let (online, message) = match client.get("http://127.0.0.1:11434/api/tags").send().await
             {
                 Ok(response) if response.status().is_success() => match response
@@ -841,6 +896,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     db.init_schemas()?;
     let settings = Settings::load();
     ui.set_llm_model(settings.llm_model.as_str().into());
+    ui.set_use_laya(settings.use_laya);
+    ui.set_laya_fallback(settings.laya_fallback);
     ui.set_embeddings_model(settings.embeddings_model.as_str().into());
     ui.set_search_limit(settings.search_limit as i32);
     ui.set_classification_web(settings.classification_web);
