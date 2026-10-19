@@ -717,6 +717,7 @@ fn spawn_ai(
                     }
                 }
                 _=tick.tick()=>{
+                    if !Settings::load().use_laya { laya.stop(); }
                     let Ok(queued)=db.get_queue_items() else{continue};
                     if queued.is_empty(){
                         let missing=db.connection().query_row("SELECT n.id,n.text FROM notes n LEFT JOIN note_embeddings e ON e.note_id=n.id WHERE e.note_id IS NULL ORDER BY n.id LIMIT 1",[],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?)));
@@ -833,6 +834,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     // Headless maintenance commands use the same validated transfer code as the UI.
     let args = std::env::args().collect::<Vec<_>>();
+    if args.get(1).map(String::as_str)==Some("--laya-smoke-test") {
+        let mut runtime=laya::LayaRuntime::default();
+        let result=runtime.classify(&[(9,"Films to Watch".into()),(11,"TV Series to Watch".into()),(14,"Games to Play".into())],"Banshee TV series").await?;
+        if result.as_deref()!=Some("TV Series to Watch") { return Err(format!("Unexpected Laya smoke result: {result:?}").into()); }
+        println!("Native Laya smoke passed: Banshee TV series → TV Series to Watch");return Ok(());
+    }
     if let Some(command) = args.get(1).filter(|s| {
         matches!(
             s.as_str(),
@@ -892,6 +899,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     slint::BackendSelector::new().backend_name("winit".into())
         .renderer_name("skia".into()).select()?;
     let ui = AppWindow::new()?;
+    if args.get(1).map(String::as_str)==Some("--workflow-smoke-test") {
+        let dir=tempfile::tempdir()?;
+        let db=Rc::new(Database::new(dir.path().join("workflow.db").to_str().ok_or("Invalid test path")?));db.init_schemas()?;
+        let (sender,_receiver)=tokio::sync::mpsc::unbounded_channel();wire_notes(&ui,db.clone(),sender);
+        ui.invoke_create_collection("Manual test".into());assert_eq!(ui.get_selected_class(),"Manual test");
+        ui.invoke_rename_class_wrapper("Manual test".into(),"Renamed test".into());assert_eq!(db.get_categories()?[0].1,"Renamed test");
+        ui.set_draft("Queued test".into());ui.invoke_add_main_note("Queued test".into());assert_eq!(ui.get_draft(),"");
+        ui.invoke_add_class_note("Filed test".into(),"Renamed test".into());
+        let mut view=ViewState {last_id:-1,..Default::default()};refresh(&ui,&db,&mut view)?;
+        assert_eq!(ui.get_main_notes().row_count(),1);assert_eq!(ui.get_filed_history().row_count(),1);
+        let id=ui.get_filed_history().row_data(0).ok_or("No history")?.id;ui.invoke_open_filed_note(id);assert_eq!(ui.get_selected_class(),"Renamed test");
+        println!("Capture, create/rename collection, queue and filed history smoke passed");return Ok(());
+    }
     let db = Rc::new(Database::new("data/notes.db"));
     db.init_schemas()?;
     let settings = Settings::load();

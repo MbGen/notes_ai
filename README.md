@@ -4,6 +4,19 @@ A private desktop workspace for capturing thoughts, collecting sources and findi
 notes by meaning. Notes AI uses local Ollama models to organise your notes into
 collections, with SQLite storage and optional phone sync on your trusted network.
 
+Desktop 0.5 adds an optional **Laya local classifier**. The portable Laya bundle runs
+the fine-tuned model through a bundled CPU llama.cpp runner: no Python, Ollama
+installation or cloud account is required for confident collection assignment.
+Choose Laya in Preferences and save. Optional Ollama fallback handles uncertain
+notes and new categories; disable it for Laya-only classification. Laya accepts
+confident choices among up to 24 existing collections; other cases stay queued
+when fallback is disabled. Semantic search still uses the Ollama embedding model;
+notes classified by Laya can be saved first and indexed when Ollama is available.
+
+Capture supports Enter to save and Shift+Enter for a new line, individual queue
+activity bars and stages, and a recent filing history linking notes to collections.
+Library supports manual collection creation and explicit Save/Cancel for renaming.
+
 ## The atelier interface
 
 Graphite surfaces, warm ivory type and champagne accents. Capture, Library,

@@ -147,9 +147,8 @@ impl SortingAgentImpl {
     }
 
     pub async fn get_embeddings(&self, note_text: &str) -> Result<Vec<f32>, String> {
-        self.ollama_instance
-            .get_embeddings(note_text)
-            .await
+        tokio::time::timeout(Duration::from_secs(20),self.ollama_instance.get_embeddings(note_text))
+            .await.ok().flatten()
             .ok_or_else(|| "Cannot get embeddings".into())
     }
 }
