@@ -306,6 +306,9 @@ fn wire_notes(
         let Some(ui) = handle.upgrade() else { return };
         if let Ok(categories) = store.get_categories() {
             if let Some((id, _)) = categories.iter().find(|(_, n)| n == name.as_str()) {
+                if let Err(error) = store.record_category_opened(*id) {
+                    alert(&ui,format!("Cannot remember collection order: {error}"));
+                }
                 let _ = store.mark_category_seen(*id);
                 if let Ok(notes) = store.get_notes(*id) {
                     ui.set_class_notes(note_model(&notes, ui.get_notes_newest_first()));

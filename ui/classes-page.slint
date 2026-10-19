@@ -84,7 +84,7 @@ export component ClassesPage inherits Rectangle {
             PageHeading { text: "Everything in its place."; horizontal-stretch: 1; }
             Text { text: root.new-total > 0 ? "\{root.new-total} new notes" : "All caught up"; color: root.new-total > 0 ? Atelier.gold : Atelier.muted; font-size: 12px; vertical-alignment: center; }
         }
-        Text { text: "Thoughtfully organised by AI. Open a collection to explore what is new."; color: Atelier.muted; font-size: 13px; }
+        Text { text: "Recently opened collections come first. Open a collection to explore what is new."; color: Atelier.muted; font-size: 13px; }
         if root.rows.length == 0: Rectangle {
             vertical-stretch: 1;
             VerticalLayout { alignment: center; spacing: 14px;

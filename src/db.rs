@@ -41,6 +41,10 @@ impl Database {
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS category_visits (
+                category_id INTEGER PRIMARY KEY REFERENCES categories(id) ON DELETE CASCADE,
+                opened_order INTEGER NOT NULL
+            );
 
             CREATE TABLE IF NOT EXISTS notes (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +82,7 @@ impl Database {
     }
 
     pub fn category_stats(&self) -> Result<Vec<(i64, String, i64, i64)>> {
-        let mut stmt=self.connection().prepare("SELECT c.id,c.name,COUNT(n.id),COALESCE(SUM(CASE WHEN a.seen=0 THEN 1 ELSE 0 END),0) FROM categories c LEFT JOIN notes n ON n.category_id=c.id LEFT JOIN note_activity a ON a.note_id=n.id GROUP BY c.id ORDER BY c.name COLLATE NOCASE")?;
+        let mut stmt=self.connection().prepare("SELECT c.id,c.name,COUNT(n.id),COALESCE(SUM(CASE WHEN a.seen=0 THEN 1 ELSE 0 END),0) FROM categories c LEFT JOIN notes n ON n.category_id=c.id LEFT JOIN note_activity a ON a.note_id=n.id LEFT JOIN category_visits v ON v.category_id=c.id GROUP BY c.id ORDER BY COALESCE(v.opened_order,0) DESC,c.name COLLATE NOCASE,c.id")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
         rows.collect()
     }
@@ -91,6 +95,17 @@ impl Database {
     pub fn latest_note(&self) -> Result<Option<(i64, String, String)>> {
         use rusqlite::OptionalExtension;
         self.connection().query_row("SELECT n.id,c.name,n.text FROM notes n JOIN categories c ON c.id=n.category_id ORDER BY n.id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()
+    }
+
+    pub fn record_category_opened(&self, category_id: i64) -> Result<()> {
+        // Only explicit navigation records a visit, never the periodic refresh.
+        self.connection().execute(
+            "INSERT INTO category_visits(category_id,opened_order)
+             VALUES (?1,(SELECT COALESCE(MAX(opened_order),0)+1 FROM category_visits))
+             ON CONFLICT(category_id) DO UPDATE SET opened_order=excluded.opened_order",
+            [category_id],
+        )?;
+        Ok(())
     }
 
     pub fn category_for_note(&self, note_id: i64) -> Result<String> {
@@ -267,6 +282,31 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recent_collection_order_survives_restart_rename_and_refresh() {
+        let path=std::env::temp_dir().join(format!("notes-ai-visits-{}.db",uuid::Uuid::new_v4()));
+        let (alpha,beta,zulu);
+        {
+            let db=Database::new(path.to_str().unwrap());db.init_schemas().unwrap();
+            alpha=db.insert_category("Alpha").unwrap();beta=db.insert_category("Beta").unwrap();zulu=db.insert_category("Zulu").unwrap();
+            let order=||db.category_stats().unwrap().iter().map(|c|c.0).collect::<Vec<_>>();
+            assert_eq!(order(),vec![alpha,beta,zulu]);
+            db.record_category_opened(zulu).unwrap();db.record_category_opened(beta).unwrap();
+            assert_eq!(order(),vec![beta,zulu,alpha]);
+            db.mark_category_seen(zulu).unwrap();db.category_stats().unwrap();db.init_schemas().unwrap();
+            assert_eq!(order(),vec![beta,zulu,alpha]);
+            db.record_category_opened(zulu).unwrap();db.rename_category(zulu,"Renamed").unwrap();
+            assert_eq!(order(),vec![zulu,beta,alpha]);
+        }
+        {
+            let db=Database::new(path.to_str().unwrap());db.init_schemas().unwrap();
+            assert_eq!(db.category_stats().unwrap().iter().map(|c|c.0).collect::<Vec<_>>(),vec![zulu,beta,alpha]);
+            db.delete_category(zulu).unwrap();
+            assert_eq!(db.category_stats().unwrap().iter().map(|c|c.0).collect::<Vec<_>>(),vec![beta,alpha]);
+            let visits:i64=db.connection().query_row("SELECT COUNT(*) FROM category_visits WHERE category_id=?1",[zulu],|r|r.get(0)).unwrap();assert_eq!(visits,0);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn unread_migration_survives_restart_and_counts_only_existing_notes() {
