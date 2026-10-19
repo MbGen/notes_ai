@@ -1,6 +1,7 @@
 param(
-    [string]$Version = '0.4.0',
-    [string]$RuntimeDirectory = ''
+    [string]$Version = '0.5.0',
+    [string]$RuntimeDirectory = '',
+    [string]$LayaDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -17,6 +18,16 @@ if ($RuntimeDirectory) {
         $source = Join-Path $RuntimeDirectory $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $staging $name) }
     }
+}
+if ($LayaDirectory) {
+    foreach ($required in @('llama-server.exe','notes-laya-v1-f16.gguf')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $LayaDirectory $required))) { throw "Laya bundle missing $required" }
+    }
+    $layaTarget = Join-Path $staging 'laya'
+    New-Item -ItemType Directory -Path $layaTarget | Out-Null
+    Get-ChildItem -LiteralPath $LayaDirectory -File | Where-Object {
+        $_.Extension -eq '.dll' -or $_.Name -in @('llama-server.exe','notes-laya-v1-f16.gguf') -or $_.Name -like 'LICENSE*'
+    } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $layaTarget $_.Name) }
 }
 # The staging directory is new and contains only whitelisted release files.
 # Never archive the workspace or its personal data/ and settings files.
