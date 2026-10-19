@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod note_clipboard;
 
 use chrono::Local;
 use slint::{Color, Model, ModelRc, SharedString, Timer, VecModel};
@@ -912,6 +913,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let id=ui.get_filed_history().row_data(0).ok_or("No history")?.id;ui.invoke_open_filed_note(id);assert_eq!(ui.get_selected_class(),"Renamed test");
         println!("Capture, create/rename collection, queue and filed history smoke passed");return Ok(());
     }
+    note_clipboard::install(&ui);
     let db = Rc::new(Database::new("data/notes.db"));
     db.init_schemas()?;
     let settings = Settings::load();

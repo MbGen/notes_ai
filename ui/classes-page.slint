@@ -41,6 +41,40 @@ component ClassTile inherits Rectangle {
     }
 }
 
+export global NotePointer {
+    in-out property <int> released;
+    in-out property <bool> copy-click;
+}
+
+export component SelectableNoteText inherits Rectangle {
+    in property <string> text;
+    in property <length> text-size: 14px;
+    out property <length> text-height: editor.preferred-height;
+    out property <bool> copied: false;
+    property <int> release-count: NotePointer.released;
+    callback did-copy();
+    background: root.copied ? #d3bc8d18 : transparent;
+    clip: true;
+    public function copy-all() {
+        clipboard-source.select-all(); clipboard-source.copy();
+        root.copied = true; feedback.restart(); root.did-copy();
+    }
+    changed release-count => {
+        if hit.has-hover && NotePointer.copy-click { root.copy-all(); }
+    }
+    feedback := Timer { interval: 1600ms; triggered => { root.copied = false; } }
+    clipboard-source := TextInput { width: 0px; height: 0px; text: root.text; read-only: true; }
+    hit := TouchArea {
+        mouse-cursor: MouseCursor.text;
+        editor := TextInput {
+            text: root.text; read-only: true; single-line: false; wrap: word-wrap;
+            font-size: root.text-size; color: Atelier.ink;
+            selection-background-color: #d3bc8d66;
+            selection-foreground-color: Atelier.ink;
+        }
+    }
+}
+
 export component ClassNoteItem inherits Rectangle {
     in property <string> note-text;
     in property <string> date;
@@ -49,11 +83,10 @@ export component ClassNoteItem inherits Rectangle {
     callback delete-note();
     property <bool> expanded: false;
     property <bool> copied: false;
-    height: root.expanded ? max(124px, body.preferred-height + 88px) : 124px;
+    height: root.expanded ? max(124px, body.text-height + 88px) : 124px;
     border-radius: 12px;
     background: Atelier.surface;
     border-width: 1px; border-color: Atelier.border;
-    copy-input := TextInput { width: 0; height: 0; text: root.note-text; read-only: true; }
     copy-timer := Timer { interval: 1600ms; triggered => { root.copied = false; self.running = false; } }
     VerticalLayout {
         padding: 18px; spacing: 10px;
@@ -62,11 +95,11 @@ export component ClassNoteItem inherits Rectangle {
             Text { text: root.date; color: Atelier.gold; font-size: 10px; overflow: elide; horizontal-stretch: 1; }
             Text { text: "NOTE"; color: Atelier.dim; font-size: 9px; letter-spacing: 1px; }
         }
-        body := Text { text: root.note-text; color: Atelier.ink; font-size: 14px; wrap: word-wrap; overflow: elide; vertical-stretch: 1; }
+        body := SelectableNoteText { text: root.note-text; vertical-stretch: 1; did-copy => { root.copied = true; copy-timer.restart(); } }
         HorizontalLayout {
             height: 20px; spacing: 18px;
             Rectangle { width: 68px; Text { text: root.expanded ? "Collapse ↑" : "Read more ↗"; color: Atelier.muted; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.expanded = !root.expanded; } } }
-            Rectangle { width: 44px; Text { text: root.copied ? "Copied" : "Copy"; color: root.copied ? Atelier.green : Atelier.muted; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { copy-input.select-all(); copy-input.copy(); root.copied = true; copy-timer.running = true; } } }
+            Rectangle { width: 44px; Text { text: root.copied ? "Copied" : "Copy"; color: root.copied ? Atelier.green : Atelier.muted; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { body.copy-all(); } } }
             Rectangle { horizontal-stretch: 1; }
             if root.can-delete: Rectangle { width: 40px; Text { text: "Delete"; color: Atelier.dim; font-size: 10px; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.delete-note(); } } }
         }
@@ -88,7 +121,7 @@ export component QueueNoteItem inherits Rectangle {
             Text { text: root.status; color: Atelier.muted; font-size: 10px; overflow: elide; horizontal-stretch: 1; }
             ActionButton { label: "Delete"; height: 24px; clicked => { root.delete-note(); } }
         }
-        Text { text: root.note-text; color: Atelier.ink; font-size: 14px; overflow: elide; horizontal-stretch: 1; }
+        SelectableNoteText { text: root.note-text; horizontal-stretch: 1; }
         track := Rectangle { height: 4px; border-radius: 2px; background: Atelier.border; clip: true;
             Rectangle { height: 4px; width: root.active ? parent.width / 3 : parent.width;
                 x: root.active && root.phase ? parent.width - self.width : 0px;

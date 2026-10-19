@@ -1,6 +1,7 @@
+export { NotePointer } from "classes-page.slint";
 import { ScrollView, Palette } from "std-widgets.slint";
 import { Atelier, ActionButton, Field, Eyebrow, PageHeading, StatusDot, NoteEditor } from "atelier.slint";
-import { ClassesPage, ClassNotesPage, ClassNoteItem, QueueNoteItem, ClassTileData, TileRow, NoteData, QueueData, HistoryData, WebResultData } from "classes-page.slint";
+import { ClassesPage, ClassNotesPage, ClassNoteItem, QueueNoteItem, SelectableNoteText, ClassTileData, TileRow, NoteData, QueueData, HistoryData, WebResultData } from "classes-page.slint";
 import { SettingsPage } from "settings-page.slint";
 import { Page } from "types.slint";
 
@@ -170,10 +171,9 @@ export component AppWindow inherits Window {
                         VerticalLayout { width: history-scroll.visible-width; spacing: 6px;
                             for item in root.filed-history: Rectangle { height: 48px; border-radius: 8px; background: #1b241e;
                                 HorizontalLayout { padding: 10px; spacing: 12px;
-                                    Text { text: item.text; color: Atelier.ink; font-size: 11px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
-                                    Text { text: "→  " + item.category; color: Atelier.gold; font-size: 11px; width: 190px; overflow: elide; vertical-alignment: center; }
+                                    SelectableNoteText { text: item.text; text-size: 11px; horizontal-stretch: 1; }
+                                    Rectangle { width: 190px; Text { text: "→  " + item.category; color: Atelier.gold; font-size: 11px; overflow: elide; vertical-alignment: center; } TouchArea { mouse-cursor: pointer; clicked => { root.open-filed-note(item.id); } } }
                                 }
-                                TouchArea { mouse-cursor: pointer; clicked => { root.open-filed-note(item.id); } }
                             }
                         }
                     }

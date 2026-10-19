@@ -57,13 +57,13 @@ jobs:
           $crt = Get-ChildItem $redistRoot -Directory -Recurse -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue | Where-Object { $_.Parent.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
           $runtime = if ($crt) { $crt.FullName } else { Join-Path $env:SystemRoot 'System32' }
           if (-not (Test-Path (Join-Path $runtime 'msvcp140.dll'))) { throw 'Visual C++ runtime not found' }
-          ./scripts/package-windows.ps1 -Version '0.5.1' -RuntimeDirectory $runtime
+          ./scripts/package-windows.ps1 -Version '0.5.2' -RuntimeDirectory $runtime
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
-          name: notes-ai-windows-0.5.1
+          name: notes-ai-windows-0.5.2
           path: |
-            dist/NotesAI-0.5.1-windows-x64.zip
+            dist/NotesAI-0.5.2-windows-x64.zip
             target/x86_64-pc-windows-msvc/release/notes_ai.exe
             target/x86_64-pc-windows-msvc/release/examples/render_previews.exe
           if-no-files-found: ignore

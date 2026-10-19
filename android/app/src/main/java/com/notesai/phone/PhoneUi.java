@@ -11,6 +11,10 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
+import android.content.ClipboardManager;
+import android.content.ClipData;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
 import android.widget.*;
 import org.json.*;
 import java.util.*;
@@ -49,7 +53,7 @@ final class PhoneUi {
         activity.getWindow().getDecorView().setSystemUiVisibility(0);
         shell=column();shell.setBackgroundColor(CANVAS);shell.setFocusableInTouchMode(true);
         LinearLayout header=row();header.setPadding(dp(24),dp(18),dp(24),dp(14));
-        TextView brand=text("NOTES AI  /  ATELIER",11,GOLD);brand.setLetterSpacing(.15f);
+        TextView brand=text("NOTES AI",11,GOLD);brand.setLetterSpacing(.15f);
         header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         connectionBadge=text("●  Offline",11,MUTED);connectionBadge.setContentDescription("Connection status: offline");
         header.addView(connectionBadge);shell.addView(header);
@@ -57,22 +61,17 @@ final class PhoneUi {
         pages=column();shell.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         capture=page();library=page();connection=page();
 
-        eyebrow(capture,"A LITTLE SPACE FOR YOUR MIND");
-        heading(capture,"Make room\nfor a thought.");
-        paragraph(capture,"Catch it here. Your PC will find its place.");
+        heading(capture,"Capture.");
         LinearLayout composer=panel(capture);
-        eyebrow(composer,"QUICK CAPTURE");
-        input=edit("What’s on your mind?",false);input.setGravity(Gravity.TOP);input.setMinLines(5);
+        input=edit("Write a note…",false);input.setGravity(Gravity.TOP);input.setMinLines(3);
         input.setTextSize(19);input.setBackgroundColor(Color.TRANSPARENT);input.setPadding(0,dp(16),0,dp(16));
         composer.addView(input,new LinearLayout.LayoutParams(-1,-2));
-        add=button("Save a thought  ↗",true);composer.addView(add);
-        TextView offline=text("Saved on your phone first. Sent when your PC is available.",11,MUTED);
-        gap(composer,offline,12);
+        add=button("Save note  ↗",true);composer.addView(add);
         LinearLayout metrics=row();metrics.setPadding(0,dp(22),0,dp(8));
         queueCount=text("0 waiting to send",12,GOLD);metrics.addView(queueCount,new LinearLayout.LayoutParams(0,-2,1));
         recentCount=text("0 on your PC",12,MUTED);metrics.addView(recentCount);capture.addView(metrics);
         changeSummary=text("",12,GOLD);gap(capture,changeSummary,8);
-        eyebrow(capture,"WAITING TO FIND A HOME");recent=column();capture.addView(recent);
+        recent=column();capture.addView(recent);
 
         eyebrow(library,"YOUR THOUGHTS, COLLECTED");libraryTitle=serif("The library.",38);gap(library,libraryTitle,16);
         libraryCount=text("Your notes travel with you.",13,MUTED);gap(library,libraryCount,0);
@@ -128,10 +127,11 @@ final class PhoneUi {
         queueCount.setText(activity.getString(R.string.waiting_total,local.length()));recentCount.setText(activity.getString(R.string.pc_total,remote.length()));
         libraryCount.setText(activity.getString(R.string.library_total,local.length()+remote.length()));
         int changes=SyncState.operations(state).length(),conflicts=state.optJSONArray("conflicts")==null?0:state.getJSONArray("conflicts").length();
-        changeSummary.setText(changes+" changes waiting to sync · "+conflicts+" conflicts to resolve"+(changes>0&&state.optInt("protocol",1)<2?" · Update the PC app to sync edits":""));
+        changeSummary.setVisibility(changes>0||conflicts>0?View.VISIBLE:View.GONE);
+        changeSummary.setText(changes+" pending changes"+(conflicts>0?" · "+conflicts+" conflicts":"")+(changes>0&&state.optInt("protocol",1)<2?" · Update PC app":""));
         recent.removeAllViews();
         for(int i=local.length()-1;i>=Math.max(0,local.length()-3);i--)noteCard(recent,local.getJSONObject(i),true);
-        if(local.length()==0)empty(recent,"All caught up.","New thoughts will wait here until your PC receives them.");
+
         renderLibrary();
     }
     String currentCollection(){return category;}
@@ -178,11 +178,22 @@ final class PhoneUi {
         if(note.has("_conflict"))detail="CONFLICT · YOUR CHANGE IS SAFE HERE";
         TextView tag=text(detail,10,waiting?GOLD:GREEN);tag.setLetterSpacing(.08f);card.addView(tag);
         TextView body=text(note.optString("text"),16,INK);body.setTextIsSelectable(true);body.setLineSpacing(dp(4),1);gap(card,body,12);
+        // Observe confirmed taps while TextView retains long-press selection and scrolling.
+        GestureDetector taps=new GestureDetector(activity,new GestureDetector.SimpleOnGestureListener(){
+            @Override public boolean onSingleTapConfirmed(MotionEvent event){copyNote(note.optString("text"));return true;}
+        });
+        body.setOnTouchListener((view,event)->{taps.onTouchEvent(event);return false;});
+        card.setOnClickListener(v->copyNote(note.optString("text")));
         String date=note.optString("date");if(!date.isEmpty())gap(card,text(date,10,MUTED),14);
         LinearLayout actions=row();gap(card,actions,14);
         Button edit=button(note.has("_conflict")?"Resolve conflict":"Edit / Move",false);actions.addView(edit,new LinearLayout.LayoutParams(0,-2,1));edit.setOnClickListener(v->{if(onManage!=null)onManage.accept(note,false);});
         if(!note.has("_conflict")){Button remove=button("Delete",false);remove.setTextColor(RED);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.leftMargin=dp(8);actions.addView(remove,lp);remove.setOnClickListener(v->{if(onManage!=null)onManage.accept(note,true);});remove.setEnabled(!note.optBoolean("_pending"));}
         edit.setEnabled(!note.optBoolean("_pending"));
+    }
+    private void copyNote(String value){
+        ClipboardManager clipboard=(ClipboardManager)activity.getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("Note",value));
+        if(android.os.Build.VERSION.SDK_INT<33)Toast.makeText(activity,"Copied",Toast.LENGTH_SHORT).show();
     }
     private void empty(LinearLayout parent,String title,String detail){LinearLayout box=panel(parent);box.addView(serif(title,23));gap(box,text(detail,12,MUTED),10);}
     private LinearLayout page(){ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(true);scroll.setClipToPadding(false);LinearLayout content=column();content.setPadding(dp(24),dp(26),dp(24),dp(28));scroll.addView(content);pages.addView(scroll,new LinearLayout.LayoutParams(-1,-1));return content;}

@@ -1,6 +1,6 @@
 [package]
 name = "notes_ai"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 # Keep the original Skia backend for Windows font rendering.
-slint = { version = "1.14.1", features = ["renderer-winit-skia"] }
+slint = { version = "1.14.1", features = ["renderer-winit-skia", "unstable-winit-030"] }
 ollama-rs = "0.3.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.149"

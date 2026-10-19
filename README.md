@@ -129,7 +129,7 @@ path to the PC. Closed-app Android background sync is still pending.
 
 ### Windows installer
 
-Download `NotesAI-0.5.1-Setup-x64.exe` from Releases for an offline installation
+Download `NotesAI-0.5.2-Setup-x64.exe` from Releases for an offline installation
 including Laya and its CPU runtime. Choose a writable installation folder on any
 drive. The installer creates shortcuts, enables Laya on a fresh installation,
 and preserves existing `data/` on upgrades and uninstall. Ollama is optional for
@@ -160,3 +160,7 @@ Rust · Slint · Ollama · SQLite / sqlite-vec · Axum · reqwest / scraper.
 
 Android background sync and physical-device validation of the latest action
 dialogs remain future work.
+
+Notes can be copied with a click/tap on their text. On Windows, drag to select a
+fragment and use Ctrl+C; on Android, long-press for native text selection. The
+phone Capture screen keeps only the editor, save action and pending-sync state.
